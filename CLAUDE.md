@@ -88,6 +88,10 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 - CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main`, con `contents: read`. Pasos: `dotnet restore`, `dotnet build` (equivale al typecheck) y `dotnet test`.
 - La imagen Docker la construye Railway.
 - Claude no corre build, test ni lint en local: indica qué comando correr y el usuario le pasa el resultado.
+- Tests de integración (`tests/Href.Core.Tests/Integration/`):
+  - Usan Testcontainers (`postgres:16-alpine` en `PostgresFixture`) y `ApiFactory` (`WebApplicationFactory<Program>`).
+  - Marcados con `[Trait("Category", "Integration")]` (para correr solo unit tests sin Docker: `dotnet test Href.Core.sln --filter Category!=Integration`).
+  - Aislamiento: cada test trabaja con sus propios datos únicos (IDs, claves o emails generados por test) en lugar de truncar tablas.
 
   ```bash
   dotnet build Href.Core.sln -c Release
