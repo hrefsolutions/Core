@@ -15,6 +15,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 - `HealthController` ya no usa `ISession`: el chequeo `SELECT 1` vive en `DatabaseHealthService`.
 
+### Documentación
+
+- `CLAUDE.md`: ciclo de verificación al implementar (feedback loop) para cualquier agente y lista de trampas conocidas encontradas en la revisión de v0.1.0.
+
 ## 0.1.0 - 2026-11-18
 
 ### Agregado
