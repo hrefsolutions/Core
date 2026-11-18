@@ -11,7 +11,7 @@ Requirements: .NET 10 SDK (pinned by `global.json`) and Docker.
 1. Start PostgreSQL and Mailpit:
 
    ```bash
-   docker compose up -d postgres mailpit
+   docker compose up -d
    ```
 
 2. Run the API (Development profile, `http://localhost:8080`) from Visual Studio (`http` profile) or:
@@ -40,13 +40,19 @@ dotnet test Href.Core.sln
 
 ## Run the container
 
-The whole stack (PostgreSQL, Mailpit and the API image built from the `Dockerfile`), already configured, on `http://localhost:8080`:
+Optional, only to check the production image before deploying. Day-to-day development does not need it.
+
+The whole stack (PostgreSQL, Mailpit and the API image built locally from the `Dockerfile`), already configured, on `http://localhost:8080`:
 
 ```bash
-docker compose up -d --build
+docker compose --profile container up -d --build
 ```
 
-Stop the API started from Visual Studio first: both use port 8080. Afterwards the stack can be stopped and started from Docker Desktop.
+Stop the API started from Visual Studio first: both use port 8080. When done:
+
+```bash
+docker compose --profile container down
+```
 
 To run only the image, pass the variables listed in `.env.example`:
 

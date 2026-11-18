@@ -16,7 +16,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 ### Cambiado
 
 - `global.json` fija el SDK en .NET 10 (`10.0.100` con `rollForward: latestFeature`) y el CI lo usa.
-- `docker-compose.yml` incluye el servicio `api` (imagen del `Dockerfile`, ya configurada contra el PostgreSQL del compose): `docker compose up -d --build` levanta todo en `http://localhost:8080`.
+- `docker-compose.yml` incluye el servicio `api` (imagen del `Dockerfile`, ya configurada contra el PostgreSQL del compose) bajo el profile `container`: `docker compose up -d` sigue levantando solo PostgreSQL y Mailpit, y `docker compose --profile container up -d --build` levanta también la API en `http://localhost:8080`.
 
 ### Corregido
 
