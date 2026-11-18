@@ -33,7 +33,7 @@ No business entities yet.
 - Mappings: every public `ClassMapping<T>` in the API assembly is picked up automatically (`NHibernateExtensions.BuildSessionFactory` also accepts additional assemblies for tests).
 - Mapping conventions: tables and columns in `snake_case` (plural table names), explicit `Table(...)`/`Column(...)`, enums stored as strings (`varchar`), `Id` with `Generators.Assigned`, and audit columns with `NHibernateUtil.UtcDateTime` (`timestamptz`).
 - Transactions: reads require no explicit transaction; writes open an explicit transaction (`session.BeginTransaction()` + `CommitAsync`).
-- Schema: no tables yet. There is no automatic schema generation.
+- Schema migrations: DbUp (`dbup-postgresql`, `Common/Persistence/DatabaseMigrator.cs`) applies forward-only embedded SQL scripts from `src/Href.Core.Api/Database/Migrations/NNNN_description.sql` on startup (`WithTransactionPerScript`), recording executed scripts in the `schemaversions` journal table. In `Development`, `EnsureDatabase.For.PostgresqlDatabase` creates the database if it does not exist.
 
 ## Environment variables
 
@@ -42,6 +42,7 @@ No business entities yet.
 | `ASPNETCORE_ENVIRONMENT`               | no         | `Production`  | `Development` loads `appsettings.Development.json`. |
 | `PORT`                                 | no         | `8080`        | Container listen port (Railway sets it). The `Dockerfile` entrypoint copies it to `ASPNETCORE_HTTP_PORTS`. |
 | `ConnectionStrings__DefaultConnection` | yes (prod) | —             | Npgsql connection string. The app does not start without it. |
+| `Database__MigrateOnStartup`           | no         | `true`        | When `true`, `DatabaseMigrator` runs embedded DbUp SQL migrations before accepting requests. |
 
 ## External services
 

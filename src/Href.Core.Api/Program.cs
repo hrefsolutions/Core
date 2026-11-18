@@ -31,6 +31,8 @@ try
 
     var app = builder.Build();
 
+    DatabaseMigrator.MigrateIfEnabled(app.Configuration, app.Environment, app.Logger);
+
     app.UseMiddleware<CorrelationIdMiddleware>();
     app.UseSerilogRequestLogging();
     app.UseExceptionHandler();
