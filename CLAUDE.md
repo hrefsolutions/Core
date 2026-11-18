@@ -25,7 +25,9 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
   - `Table(...)` y `Column(...)` explícitos en todos los mappings.
   - Enums guardados como strings (`varchar`).
 - `Id` con `Generators.Assigned`. Para entidades nuevas: `session.Save` / `Persist`.
-- Entidades auditables: implementan `IAuditableEntity`; columnas `timestamptz` mapeadas con `NHibernateUtil.UtcDateTime`.
+- Entidades auditables: implementan `IAuditableEntity`; columnas `timestamptz` (`created_at_utc` y `updated_at_utc`) mapeadas con `NHibernateUtil.UtcDateTime`:
+  - `Property(x => x.CreatedAtUtc, m => { m.Column("created_at_utc"); m.Type(NHibernateUtil.UtcDateTime); m.NotNullable(true); m.Update(false); });`
+  - `Property(x => x.UpdatedAtUtc, m => { m.Column("updated_at_utc"); m.Type(NHibernateUtil.UtcDateTime); m.NotNullable(true); });`
 
 ## Ramas
 
