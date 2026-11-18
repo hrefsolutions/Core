@@ -19,6 +19,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - Suite de tests de integración con Testcontainers (`Testcontainers.PostgreSql`, `postgres:16-alpine`) y `WebApplicationFactory<Program>` (`PostgresFixture`, `ApiFactory`, `PersistenceIntegrationTests` y `HealthEndpointIntegrationTests`).
 - Entidad `Application` (`Modules/Applications/`), generador/verificador de `ClientSecret` (32 bytes base64url + SHA-256 en tiempo constante), mapping NHibernate (`ApplicationMapping`) y migración `0001_create_applications.sql`.
 - Endpoints de administración de aplicaciones en `ApplicationsController` (`POST /api/apps`, `GET /api/apps`, `GET /api/apps/{appKey}`, `PUT /api/apps/{appKey}`, `PATCH /api/apps/{appKey}/status` y `POST /api/apps/{appKey}/secret/rotate`) con tests de integración HTTP.
+- Autenticación M2M de aplicaciones cliente (`AppKeyAuthenticationHandler`, esquema `AppKey`, policy `Application`, headers `X-App-Key` + `X-App-Secret`, claims `app_id`/`app_key`, enriquecimiento de `AppKey` en Serilog `LogContext`) y endpoint `GET /api/apps/me`.
 
 ### Cambiado
 
