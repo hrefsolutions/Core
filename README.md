@@ -28,6 +28,18 @@ Requirements: .NET 10 SDK (pinned by `global.json`) and Docker.
 
 Mailpit UI: <http://localhost:8025> (SMTP on `localhost:1025`).
 
+### Keep the API running while you code
+
+`dotnet watch` keeps the API up on `http://localhost:8080` and applies every saved change (Hot Reload), so there is no need to press F5 after each edit:
+
+```bash
+dotnet watch --project src/Href.Core.Api
+```
+
+- Edits that Hot Reload cannot apply (for example in `Program.cs`) restart the app; `Ctrl+R` forces a restart.
+- While it runs, Windows locks the API assembly: a build or test run from Visual Studio can fail with "file in use". Stop it with `Ctrl+C` before building or running tests.
+- Visual Studio alternative: start with `Ctrl+F5` (without debugging) and enable *Hot Reload on File Save*.
+
 ## Build and test
 
 ```bash
