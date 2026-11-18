@@ -2,8 +2,8 @@
 
 API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre PostgreSQL, Serilog y xUnit. Despliegue en Railway con el `Dockerfile` de la raíz.
 
-- Código, namespaces (`Href.Core.*`), commits y títulos de PR: en inglés.
-- Descripciones de PR, `CHANGELOG.md` y esta guía: en español.
+- Código, namespaces (`Href.Core.*`), commits, títulos y descripciones de PR: en inglés.
+- `CHANGELOG.md` y esta guía: en español.
 - Mapa del sistema: `SYSTEM_MAP.md`.
 
 ## Estructura
@@ -28,8 +28,9 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 - Épicas:
   1. Se crea `epic/<id>-<slug>` desde `develop`.
   2. Cada issue de la épica tiene su rama, que sale de la rama de la épica, y su PR apunta a la épica.
-  3. Con todos los issues mergeados, se abre el PR de la épica → `develop`.
-  4. Después, el release `develop` → `main`.
+  3. Una vez que el PR de un issue se mergea a la rama de la épica, se espera confirmación del usuario y se cierra el issue con un comentario coherente sobre la completitud de la tarea.
+  4. Con todos los issues mergeados, se abre el PR de la épica → `develop`.
+  5. Después, el release `develop` → `main`.
 - Si hay otra sesión de Claude trabajando en la misma carpeta, no se cambia de rama ahí: se trabaja en un `git worktree` dentro de `.claude/worktrees/` (ignorado por git).
 
 ## Commits
@@ -51,7 +52,7 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
   - Área: `api`, `persistence`, `domain`, `infra`.
   - Un PR de release lleva el tipo de lo que publica.
 - Sin "🤖 Generated with Claude Code" ni links de sesión en la descripción.
-- La descripción sigue todas las secciones del template, en el mismo orden. Las secciones que no aplican no se borran: quedan con la casilla "sin cambios" marcada.
+- La descripción (en inglés) sigue todas las secciones del template, en el mismo orden. Las secciones que no aplican no se borran: quedan con la casilla correspondiente ("No schema changes", "Does not change the version") marcada.
 
 Ejemplo:
 
@@ -95,7 +96,7 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
   gh release create vX.Y.Z --target main --title "vX.Y.Z" --notes-file .claude/tmp/release-notes.md
   ```
 
-- Los issues y las épicas se cierran a mano en el release: los PR a ramas que no son la default no los cierran solos.
+- Los issues de una épica se cierran (con un comentario coherente sobre la completitud de la tarea) luego de mergear su PR a la rama de la épica y recibir confirmación del usuario; la épica se cierra al completar el ciclo.
 
 ## Flujo para features planificadas
 
@@ -104,7 +105,8 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 3. Con la aprobación, crea la rama (o worktree) desde `develop` (o desde la rama de la épica) e implementa dejando los cambios sin commitear.
 4. Espera a que el usuario corra el build (`Ctrl+Shift+B`) y los tests (`Test → Run All Tests`) en Visual Studio y dé el OK.
 5. Con el OK, arma el/los commits, pushea, abre el PR y pasa el link.
-6. Cuando el PR está aprobado y el bloque está completo, abre el PR de release.
+6. Una vez que el PR del issue se mergea a la rama de la épica, espera confirmación del usuario y cierra el issue con un comentario coherente sobre la completitud de la tarea.
+7. Cuando el PR está aprobado y el bloque está completo, abre el PR de release.
 
 ## Dependabot
 
