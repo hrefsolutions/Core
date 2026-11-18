@@ -73,3 +73,15 @@ public sealed record ApplicationCreatedResponse(
 }
 
 public sealed record RotateClientSecretResponse(string ClientSecret);
+
+public sealed record CurrentApplicationResponse(
+    string AppKey,
+    string Name,
+    string Status)
+{
+    public static CurrentApplicationResponse From(Application application) =>
+        new(
+            application.AppKey,
+            application.Name,
+            application.Status.ToString());
+}

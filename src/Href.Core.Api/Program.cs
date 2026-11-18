@@ -1,6 +1,7 @@
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
+using Microsoft.AspNetCore.Authentication;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -30,6 +31,16 @@ try
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
     builder.Services.AddNHibernate(builder.Configuration);
     builder.Services.AddScoped<ApplicationService>();
+    builder.Services
+        .AddAuthentication()
+        .AddScheme<AuthenticationSchemeOptions, AppKeyAuthenticationHandler>(
+            AppKeyAuthentication.SchemeName,
+            _ => { });
+    builder.Services
+        .AddAuthorizationBuilder()
+        .AddPolicy(AppKeyAuthentication.PolicyName, policy => policy
+            .AddAuthenticationSchemes(AppKeyAuthentication.SchemeName)
+            .RequireAuthenticatedUser());
 
     var app = builder.Build();
 
@@ -39,6 +50,8 @@ try
     app.UseSerilogRequestLogging();
     app.UseExceptionHandler();
     app.UseStatusCodePages();
+    app.UseAuthentication();
+    app.UseAuthorization();
     app.MapControllers();
 
     app.Run();

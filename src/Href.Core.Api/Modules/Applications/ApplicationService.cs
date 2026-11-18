@@ -9,6 +9,48 @@ namespace Href.Core.Api.Modules.Applications;
 /// </summary>
 public sealed class ApplicationService(ISession session, TimeProvider timeProvider)
 {
+    private static readonly string DummySecretHash = new('0', Application.SecretHashLength);
+
+    public async Task<Result<Application>> AuthenticateAsync(
+        string appKey,
+        string plainSecret,
+        CancellationToken cancellationToken)
+    {
+        var application = await FindByAppKeyAsync(appKey, cancellationToken);
+
+        if (application is null)
+        {
+            ClientSecretGenerator.Verify(plainSecret, DummySecretHash);
+            return AppKeyAuthentication.InvalidCredentialsError;
+        }
+
+        if (!application.VerifySecret(plainSecret))
+        {
+            return AppKeyAuthentication.InvalidCredentialsError;
+        }
+
+        if (application.Status == ApplicationStatus.Suspended)
+        {
+            return AppKeyAuthentication.ApplicationSuspendedError;
+        }
+
+        return application;
+    }
+
+    public async Task<Result<CurrentApplicationResponse>> GetCurrentAsync(
+        string appKey,
+        CancellationToken cancellationToken)
+    {
+        var application = await FindByAppKeyAsync(appKey, cancellationToken);
+
+        if (application is null)
+        {
+            return ApplicationErrors.NotFound;
+        }
+
+        return CurrentApplicationResponse.From(application);
+    }
+
     public async Task<Result<ApplicationCreatedResponse>> CreateAsync(
         CreateApplicationRequest request,
         CancellationToken cancellationToken)

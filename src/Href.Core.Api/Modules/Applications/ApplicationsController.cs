@@ -1,4 +1,5 @@
 using Href.Core.Api.Common.Web;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Href.Core.Api.Modules.Applications;
@@ -7,6 +8,24 @@ namespace Href.Core.Api.Modules.Applications;
 [Route("api/apps")]
 public sealed class ApplicationsController(ApplicationService applicationService) : ControllerBase
 {
+    [HttpGet("me")]
+    [Authorize(Policy = AppKeyAuthentication.PolicyName)]
+    public async Task<IActionResult> GetMe(CancellationToken cancellationToken)
+    {
+        var appKey = User.GetAppKey();
+
+        if (string.IsNullOrEmpty(appKey))
+        {
+            return AppKeyAuthentication.InvalidCredentialsError.ToProblem(this);
+        }
+
+        var result = await applicationService.GetCurrentAsync(appKey, cancellationToken);
+
+        return result.IsFailure
+            ? result.ToProblem(this)
+            : Ok(result.Value);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] CreateApplicationRequest request,

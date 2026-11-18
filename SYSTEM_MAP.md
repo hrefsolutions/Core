@@ -13,6 +13,7 @@ Update this file in the same PR that changes any of the items below.
 | PUT    | `/api/apps/{appKey}`              | `ApplicationsController` | Updates `name`, `description` and `allowSelfRegistration` (`200`, `400`, `404`).                |
 | PATCH  | `/api/apps/{appKey}/status`       | `ApplicationsController` | Activates or suspends an application (`Active` \| `Suspended`, `200`, `400`, `404`, `409`).     |
 | POST   | `/api/apps/{appKey}/secret/rotate`| `ApplicationsController` | Rotates the application `clientSecret`, invalidating the previous one immediately (`200`, `404`).|
+| GET    | `/api/apps/me`                    | `ApplicationsController` | M2M (`Application` policy, `X-App-Key` + `X-App-Secret`): returns the authenticated app (`200`, `401`, `403`). |
 
 ## Request pipeline (`Program.cs`)
 
@@ -20,7 +21,8 @@ Update this file in the same PR that changes any of the items below.
 2. `UseSerilogRequestLogging`: one log line per request.
 3. `UseExceptionHandler` + `GlobalExceptionHandler`: unhandled exceptions become RFC 7807 `ProblemDetails` (500). Every `ProblemDetails` includes `instance` and `correlationId`.
 4. `UseStatusCodePages`: empty error responses (such as 404 or 405) are formatted as `ProblemDetails`.
-5. `MapControllers`.
+5. `UseAuthentication` + `UseAuthorization`: scheme `AppKey` (`AppKeyAuthenticationHandler`, headers `X-App-Key` and `X-App-Secret`, claims `app_id` and `app_key`, pushes `AppKey` to Serilog `LogContext`) and policy `Application`.
+6. `MapControllers`.
 
 ## Domain
 
