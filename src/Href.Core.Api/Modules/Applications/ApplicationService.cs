@@ -1,5 +1,6 @@
 using Href.Core.Api.Common.Results;
 using NHibernate.Linq;
+using Npgsql;
 using ISession = NHibernate.ISession;
 
 namespace Href.Core.Api.Modules.Applications;
@@ -9,6 +10,8 @@ namespace Href.Core.Api.Modules.Applications;
 /// </summary>
 public sealed class ApplicationService(ISession session, TimeProvider timeProvider)
 {
+    private const string AppKeyUniqueIndexName = "ux_applications_app_key";
+
     private static readonly string DummySecretHash = new('0', Application.SecretHashLength);
 
     public async Task<Result<Application>> AuthenticateAsync(
@@ -79,8 +82,15 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
             return ApplicationErrors.AppKeyTaken;
         }
 
-        await session.SaveAsync(application, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        try
+        {
+            await session.SaveAsync(application, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (Exception exception) when (IsAppKeyUniqueViolation(exception))
+        {
+            return ApplicationErrors.AppKeyTaken;
+        }
 
         return ApplicationCreatedResponse.From(application, clientSecret);
     }
@@ -140,8 +150,7 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
         UpdateApplicationStatusRequest request,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<ApplicationStatus>(request.Status, ignoreCase: false, out var targetStatus)
-            || !Enum.IsDefined(targetStatus))
+        if (!TryParseStatusName(request.Status, out var targetStatus))
         {
             return ApplicationErrors.InvalidStatus;
         }
@@ -192,6 +201,37 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
         await transaction.CommitAsync(cancellationToken);
 
         return new RotateClientSecretResponse(clientSecret);
+    }
+
+    /// <summary>
+    /// Accepts only the exact enum names (<c>Active</c>, <c>Suspended</c>); numeric or combined values are rejected.
+    /// </summary>
+    internal static bool TryParseStatusName(string? value, out ApplicationStatus status)
+    {
+        foreach (var candidate in Enum.GetValues<ApplicationStatus>())
+        {
+            if (string.Equals(candidate.ToString(), value, StringComparison.Ordinal))
+            {
+                status = candidate;
+                return true;
+            }
+        }
+
+        status = default;
+        return false;
+    }
+
+    private static bool IsAppKeyUniqueViolation(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: AppKeyUniqueIndexName })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<Application?> FindByAppKeyAsync(string appKey, CancellationToken cancellationToken) =>

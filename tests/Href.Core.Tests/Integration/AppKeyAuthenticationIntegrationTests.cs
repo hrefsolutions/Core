@@ -1,7 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using Href.Core.Api.Modules.Applications;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Serilog.Core;
+using Serilog.Events;
 
 namespace Href.Core.Tests.Integration;
 
@@ -35,6 +39,41 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
         Assert.Equal(appKey, current.AppKey);
         Assert.Equal("M2M Service", current.Name);
         Assert.Equal("Active", current.Status);
+    }
+
+    [Fact]
+    public async Task GetMe_WithValidCredentials_AddsAppKeyToRequestCompletionLog()
+    {
+        var sink = new CapturingLogSink();
+        await using var baseFactory = new ApiFactory(postgres.ConnectionString);
+        await using var factory = baseFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.AddSingleton<ILogEventSink>(sink)));
+        using var client = factory.CreateClient();
+        var appKey = $"log-{Guid.NewGuid():N}"[..20];
+
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/apps",
+            new CreateApplicationRequest(appKey, "Log App", null, false),
+            TestContext.Current.CancellationToken);
+        var created = await createResponse.Content.ReadFromJsonAsync<ApplicationCreatedResponse>(TestContext.Current.CancellationToken);
+        Assert.NotNull(created);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/apps/me");
+        request.Headers.Add(AppKeyAuthentication.AppKeyHeaderName, appKey);
+        request.Headers.Add(AppKeyAuthentication.AppSecretHeaderName, created.ClientSecret);
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var completion = await sink.WaitForAsync(
+            logEvent => logEvent.MessageTemplate.Text.StartsWith("HTTP ", StringComparison.Ordinal)
+                && logEvent.Properties.TryGetValue("RequestPath", out var path)
+                && path is ScalarValue { Value: "/api/apps/me" },
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(completion.Properties.TryGetValue(AppKeyLogContextMiddleware.PropertyName, out var value));
+        Assert.Equal(appKey, Assert.IsType<ScalarValue>(value).Value);
     }
 
     [Fact]

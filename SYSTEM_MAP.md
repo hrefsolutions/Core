@@ -17,12 +17,14 @@ Update this file in the same PR that changes any of the items below.
 
 ## Request pipeline (`Program.cs`)
 
-1. `CorrelationIdMiddleware`: reads or creates `X-Correlation-Id`, returns it in the response and adds `CorrelationId` to every log line.
-2. `UseSerilogRequestLogging`: one log line per request.
-3. `UseExceptionHandler` + `GlobalExceptionHandler`: unhandled exceptions become RFC 7807 `ProblemDetails` (500). Every `ProblemDetails` includes `instance` and `correlationId`.
-4. `UseStatusCodePages`: empty error responses (such as 404 or 405) are formatted as `ProblemDetails`.
-5. `UseAuthentication` + `UseAuthorization`: scheme `AppKey` (`AppKeyAuthenticationHandler`, headers `X-App-Key` and `X-App-Secret`, claims `app_id` and `app_key`, pushes `AppKey` to Serilog `LogContext`) and policy `Application`.
-6. `MapControllers`.
+1. `UseForwardedHeaders`: takes the client IP and scheme from `X-Forwarded-For` / `X-Forwarded-Proto` (`ForwardLimit = 1`: only the rightmost entry, the one added by the Railway proxy, so clients cannot spoof it). Any proxy is trusted, so the container must only be reachable through Railway's proxy.
+2. `CorrelationIdMiddleware`: reads or creates `X-Correlation-Id`, returns it in the response and adds `CorrelationId` to every log line.
+3. `UseSerilogRequestLogging`: one log line per request.
+4. `UseExceptionHandler` + `GlobalExceptionHandler`: unhandled exceptions become RFC 7807 `ProblemDetails` (500). Every `ProblemDetails` includes `instance` and `correlationId`.
+5. `UseStatusCodePages`: empty error responses (such as 404 or 405) are formatted as `ProblemDetails`.
+6. `UseAuthentication` + `UseAuthorization`: scheme `AppKey` (`AppKeyAuthenticationHandler`, headers `X-App-Key` and `X-App-Secret`, claims `app_id` and `app_key`) and policy `Application`.
+7. `AppKeyLogContextMiddleware`: for authenticated applications, adds `AppKey` to the Serilog `LogContext` (logs written later in the request) and to the request completion log line.
+8. `MapControllers`.
 
 ## Domain
 
@@ -41,6 +43,7 @@ Update this file in the same PR that changes any of the items below.
 
 - NHibernate `ISessionFactory` (singleton) and `ISession` (scoped per request), registered in `Common/Persistence/NHibernateExtensions.cs`.
 - Dialect `PostgreSQL83Dialect`, driver `NpgsqlDriver`.
+- Health: `DatabaseHealthService` (scoped, `Common/Persistence/`) runs `SELECT 1` for `GET /health`.
 - Mappings: every public `ClassMapping<T>` in the API assembly is picked up automatically (`NHibernateExtensions.BuildSessionFactory` also accepts additional assemblies for tests).
 - Mapping conventions: tables and columns in `snake_case` (plural table names), explicit `Table(...)`/`Column(...)`, enums stored as strings (`varchar`), `Id` with `Generators.Assigned`, and audit columns with `NHibernateUtil.UtcDateTime` (`timestamptz`).
 - Transactions: reads require no explicit transaction; writes open an explicit transaction (`session.BeginTransaction()` + `CommitAsync`).

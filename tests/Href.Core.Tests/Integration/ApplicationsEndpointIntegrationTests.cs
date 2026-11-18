@@ -75,6 +75,51 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     }
 
     [Fact]
+    public async Task Create_WhenSameAppKeyIsPostedConcurrently_ReturnsOneCreatedAndOnlyConflicts()
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = factory.CreateClient();
+        var appKey = $"race-{Guid.NewGuid():N}"[..20];
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => client.PostAsJsonAsync(
+            "/api/apps",
+            new CreateApplicationRequest(appKey, "Race App", null, false),
+            TestContext.Current.CancellationToken)));
+
+        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
+        Assert.All(
+            responses.Where(response => response.StatusCode != HttpStatusCode.Created),
+            response => Assert.Equal(HttpStatusCode.Conflict, response.StatusCode));
+    }
+
+    [Fact]
+    public async Task UpdateStatus_WithNumericValue_Returns400AndKeepsStatus()
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = factory.CreateClient();
+        var appKey = $"num-{Guid.NewGuid():N}"[..20];
+
+        await client.PostAsJsonAsync(
+            "/api/apps",
+            new CreateApplicationRequest(appKey, "Numeric Status App", null, false),
+            TestContext.Current.CancellationToken);
+
+        var response = await client.PatchAsJsonAsync(
+            $"/api/apps/{appKey}/status",
+            new UpdateApplicationStatusRequest("1"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(TestContext.Current.CancellationToken);
+        Assert.NotNull(problem);
+        Assert.Equal(ApplicationErrors.InvalidStatus.Code, problem.Extensions["errorCode"]?.ToString());
+
+        var current = await client.GetFromJsonAsync<ApplicationResponse>($"/api/apps/{appKey}", TestContext.Current.CancellationToken);
+        Assert.NotNull(current);
+        Assert.Equal("Active", current.Status);
+    }
+
+    [Fact]
     public async Task Create_WhenAppKeyHasInvalidSlugFormat_Returns400BadRequest()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
