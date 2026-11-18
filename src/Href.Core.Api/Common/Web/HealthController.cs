@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ISession = NHibernate.ISession;
 
 namespace Href.Core.Api.Common.Web;
 
 [ApiController]
+[AllowAnonymous]
 [Route("health")]
 public sealed class HealthController(ISession session, ILogger<HealthController> logger) : ControllerBase
 {
