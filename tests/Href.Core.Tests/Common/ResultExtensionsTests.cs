@@ -1,0 +1,90 @@
+using Href.Core.Api.Common.Results;
+using Href.Core.Api.Common.Web;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+
+namespace Href.Core.Tests.Common;
+
+public sealed class ResultExtensionsTests
+{
+    [Theory]
+    [InlineData(ErrorType.Validation, StatusCodes.Status400BadRequest, "Validation error.", "https://tools.ietf.org/html/rfc9110#section-15.5.1")]
+    [InlineData(ErrorType.Unauthorized, StatusCodes.Status401Unauthorized, "Unauthorized.", "https://tools.ietf.org/html/rfc9110#section-15.5.2")]
+    [InlineData(ErrorType.Forbidden, StatusCodes.Status403Forbidden, "Forbidden.", "https://tools.ietf.org/html/rfc9110#section-15.5.4")]
+    [InlineData(ErrorType.NotFound, StatusCodes.Status404NotFound, "Resource not found.", "https://tools.ietf.org/html/rfc9110#section-15.5.5")]
+    [InlineData(ErrorType.Conflict, StatusCodes.Status409Conflict, "Conflict.", "https://tools.ietf.org/html/rfc9110#section-15.5.10")]
+    [InlineData(ErrorType.Failure, StatusCodes.Status500InternalServerError, "An unexpected error occurred.", "https://tools.ietf.org/html/rfc9110#section-15.6.1")]
+    public void ToProblem_MapsErrorToProblemDetails(ErrorType errorType, int expectedStatus, string expectedTitle, string expectedType)
+    {
+        var controller = CreateController();
+        var result = Result.Failure(new Error("Apps.Duplicate", "Application already exists.", errorType));
+
+        var actionResult = result.ToProblem(controller);
+
+        Assert.Equal(expectedStatus, actionResult.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(actionResult.Value);
+        Assert.Equal(expectedStatus, problem.Status);
+        Assert.Equal(expectedTitle, problem.Title);
+        Assert.Equal(expectedType, problem.Type);
+        Assert.Equal("Application already exists.", problem.Detail);
+        Assert.Equal("Apps.Duplicate", problem.Extensions["errorCode"]);
+    }
+
+    [Fact]
+    public void ToProblem_OnSuccessResult_Throws()
+    {
+        var controller = CreateController();
+        var result = Result.Success();
+
+        Assert.Throws<InvalidOperationException>(() => result.ToProblem(controller));
+    }
+
+    private static TestController CreateController() =>
+        new()
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext(),
+            },
+            ProblemDetailsFactory = new StubProblemDetailsFactory(),
+        };
+
+    private sealed class TestController : ControllerBase;
+
+    private sealed class StubProblemDetailsFactory : ProblemDetailsFactory
+    {
+        public override ProblemDetails CreateProblemDetails(
+            HttpContext httpContext,
+            int? statusCode = null,
+            string? title = null,
+            string? type = null,
+            string? detail = null,
+            string? instance = null) =>
+            new()
+            {
+                Status = statusCode,
+                Title = title,
+                Type = type,
+                Detail = detail,
+                Instance = instance,
+            };
+
+        public override ValidationProblemDetails CreateValidationProblemDetails(
+            HttpContext httpContext,
+            Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary modelStateDictionary,
+            int? statusCode = null,
+            string? title = null,
+            string? type = null,
+            string? detail = null,
+            string? instance = null) =>
+            new(modelStateDictionary)
+            {
+                Status = statusCode,
+                Title = title,
+                Type = type,
+                Detail = detail,
+                Instance = instance,
+            };
+    }
+}
