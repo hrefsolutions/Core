@@ -38,7 +38,7 @@ No business entities yet.
 | Variable                               | Required   | Default       | Notes                                        |
 |----------------------------------------|------------|---------------|----------------------------------------------|
 | `ASPNETCORE_ENVIRONMENT`               | no         | `Production`  | `Development` loads `appsettings.Development.json`. |
-| `PORT`                                 | no         | `8080`        | Container listen port (Railway sets it).     |
+| `PORT`                                 | no         | `8080`        | Container listen port (Railway sets it). The `Dockerfile` entrypoint copies it to `ASPNETCORE_HTTP_PORTS`. |
 | `ConnectionStrings__DefaultConnection` | yes (prod) | —             | Npgsql connection string. The app does not start without it. |
 
 ## External services

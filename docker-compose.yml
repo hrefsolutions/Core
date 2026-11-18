@@ -23,5 +23,19 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  api:
+    profiles: [container]
+    build: .
+    image: href-core
+    container_name: href-core-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=href_core;Username=href;Password=href
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres-data:
