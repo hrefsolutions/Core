@@ -1,0 +1,1 @@
+SELECT * FROM non_existent_table_for_migration_failure_test;

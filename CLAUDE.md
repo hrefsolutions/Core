@@ -15,10 +15,24 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 ## Convenciones de código
 
 - Sin repositorios genéricos ni AutoMapper. Los handlers/controllers usan `ISession` de NHibernate directo.
+- Transacciones:
+  - Lecturas: sin transacción explícita.
+  - Escrituras: `using var transaction = session.BeginTransaction();` ... `await transaction.CommitAsync(cancellationToken);` explícito dentro de la acción del controller (o del servicio que invoca). Sin filtro implícito de transacción por request.
 - Errores esperados: `Result` / `Result<T>` con `Error`. Las excepciones son para fallas inesperadas (las atrapa `GlobalExceptionHandler`).
 - Entidades: heredan de `Entity`, miembros `virtual`. Mapping con `ClassMapping<T>` público en el assembly de la API (se registra solo).
+- Convenciones de nombres y mappings de base de datos:
+  - Tablas y columnas en `snake_case`, con nombres de tabla en plural (ej.: `applications`).
+  - `Table(...)` y `Column(...)` explícitos en todos los mappings.
+  - Enums guardados como strings (`varchar`).
 - `Id` con `Generators.Assigned`. Para entidades nuevas: `session.Save` / `Persist`.
-- Entidades auditables: implementan `IAuditableEntity`; columnas `timestamptz` mapeadas con `NHibernateUtil.UtcDateTime`.
+- Entidades auditables: implementan `IAuditableEntity`; columnas `timestamptz` (`created_at_utc` y `updated_at_utc`) mapeadas con `NHibernateUtil.UtcDateTime`:
+  - `Property(x => x.CreatedAtUtc, m => { m.Column("created_at_utc"); m.Type(NHibernateUtil.UtcDateTime); m.NotNullable(true); m.Update(false); });`
+  - `Property(x => x.UpdatedAtUtc, m => { m.Column("updated_at_utc"); m.Type(NHibernateUtil.UtcDateTime); m.NotNullable(true); });`
+- Migraciones de esquema (DbUp, `DatabaseMigrator`):
+  - Scripts forward-only en `src/Href.Core.Api/Database/Migrations/`, nombrados `NNNN_description.sql` (ej.: `0001_create_applications.sql`), embebidos en el assembly (`EmbeddedResource`) y aplicados al arrancar (controlado por `Database:MigrateOnStartup`, por defecto `true`).
+  - Un script mergeado nunca se edita; cualquier cambio posterior va en un script nuevo.
+  - Un script por PR que modifique el esquema, listado en la sección `Data / database` del PR.
+  - Tabla de journal de DbUp: `schemaversions`.
 
 ## Ramas
 
@@ -74,6 +88,10 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 - CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main`, con `contents: read`. Pasos: `dotnet restore`, `dotnet build` (equivale al typecheck) y `dotnet test`.
 - La imagen Docker la construye Railway.
 - Claude no corre build, test ni lint en local: indica qué comando correr y el usuario le pasa el resultado.
+- Tests de integración (`tests/Href.Core.Tests/Integration/`):
+  - Usan Testcontainers (`postgres:16-alpine` en `PostgresFixture`) y `ApiFactory` (`WebApplicationFactory<Program>`).
+  - Marcados con `[Trait("Category", "Integration")]` (para correr solo unit tests sin Docker: `dotnet test Href.Core.sln --filter Category!=Integration`).
+  - Aislamiento: cada test trabaja con sus propios datos únicos (IDs, claves o emails generados por test) en lugar de truncar tablas.
 
   ```bash
   dotnet build Href.Core.sln -c Release
