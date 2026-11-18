@@ -1,4 +1,5 @@
 using System.Reflection;
+using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -14,7 +15,7 @@ public sealed class HealthControllerTests
     public async Task Get_WhenDatabaseAnswers_Returns200Healthy()
     {
         var session = FakeSession.Returning(1);
-        var controller = new HealthController(session, NullLogger<HealthController>.Instance);
+        var controller = new HealthController(new DatabaseHealthService(session, NullLogger<DatabaseHealthService>.Instance));
 
         var actionResult = await controller.Get(CancellationToken.None);
 
@@ -27,7 +28,7 @@ public sealed class HealthControllerTests
     public async Task Get_WhenDatabaseThrows_Returns503Unhealthy()
     {
         var session = FakeSession.Throwing(new InvalidOperationException("Database unavailable"));
-        var controller = new HealthController(session, NullLogger<HealthController>.Instance);
+        var controller = new HealthController(new DatabaseHealthService(session, NullLogger<DatabaseHealthService>.Instance));
 
         var actionResult = await controller.Get(CancellationToken.None);
 
@@ -43,7 +44,7 @@ public sealed class HealthControllerTests
         await cancellationTokenSource.CancelAsync();
 
         var session = FakeSession.Throwing(new OperationCanceledException(cancellationTokenSource.Token));
-        var controller = new HealthController(session, NullLogger<HealthController>.Instance);
+        var controller = new HealthController(new DatabaseHealthService(session, NullLogger<DatabaseHealthService>.Instance));
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => controller.Get(cancellationTokenSource.Token));
     }

@@ -4,6 +4,17 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Corregido
+
+- El `AppKey` de la aplicación autenticada ahora llega a los logs: `AppKeyLogContextMiddleware` lo agrega al `LogContext` de Serilog y a la línea de cierre del request, y el formato de consola lo muestra (`[{AppKey}]`). En v0.1.0 el handler lo agregaba dentro de un método `async` y se perdía.
+- `PATCH /api/apps/{appKey}/status` solo acepta `Active` o `Suspended`: valores numéricos como `"1"` devuelven `400 Applications.InvalidStatus` en lugar de suspender la aplicación.
+- `POST /api/apps` concurrentes con la misma `appKey` devuelven `409 Applications.AppKeyTaken` en lugar de `500` cuando choca el índice único `ux_applications_app_key`.
+- La IP del cliente (por ejemplo, en `AuditLog.IpAddress`) se toma de `X-Forwarded-For` (`UseForwardedHeaders`, una sola entrada: la que agrega el proxy de Railway) en lugar de la IP del proxy.
+
+### Cambiado
+
+- `HealthController` ya no usa `ISession`: el chequeo `SELECT 1` vive en `DatabaseHealthService`.
+
 ## 0.1.0 - 2026-11-18
 
 ### Agregado
