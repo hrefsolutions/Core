@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: href-core-postgres
+    environment:
+      POSTGRES_DB: href_core
+      POSTGRES_USER: href
+      POSTGRES_PASSWORD: href
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U href -d href_core"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.34
+    container_name: href-core-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  postgres-data:

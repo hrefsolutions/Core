@@ -1,0 +1,83 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    assignees: [Scerutti]
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      nuget-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: [version-update:semver-major]
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: [version-update:semver-major]
+      - dependency-name: "Npgsql*"
+        update-types: [version-update:semver-major]
+      - dependency-name: "Serilog.AspNetCore"
+        update-types: [version-update:semver-major]
+      - dependency-name: "NHibernate"
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    assignees: [Scerutti]
+    labels: [dependencies, infra]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    assignees: [Scerutti]
+    labels: [dependencies, infra]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      docker-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    assignees: [Scerutti]
+    labels: [dependencies, infra]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      compose-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "postgres"
+        update-types: [version-update:semver-major]
