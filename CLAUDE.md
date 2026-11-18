@@ -28,6 +28,11 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 - Entidades auditables: implementan `IAuditableEntity`; columnas `timestamptz` (`created_at_utc` y `updated_at_utc`) mapeadas con `NHibernateUtil.UtcDateTime`:
   - `Property(x => x.CreatedAtUtc, m => { m.Column("created_at_utc"); m.Type(NHibernateUtil.UtcDateTime); m.NotNullable(true); m.Update(false); });`
   - `Property(x => x.UpdatedAtUtc, m => { m.Column("updated_at_utc"); m.Type(NHibernateUtil.UtcDateTime); m.NotNullable(true); });`
+- Migraciones de esquema (DbUp, `DatabaseMigrator`):
+  - Scripts forward-only en `src/Href.Core.Api/Database/Migrations/`, nombrados `NNNN_description.sql` (ej.: `0001_create_applications.sql`), embebidos en el assembly (`EmbeddedResource`) y aplicados al arrancar (controlado por `Database:MigrateOnStartup`, por defecto `true`).
+  - Un script mergeado nunca se edita; cualquier cambio posterior va en un script nuevo.
+  - Un script por PR que modifique el esquema, listado en la sección `Data / database` del PR.
+  - Tabla de journal de DbUp: `schemaversions`.
 
 ## Ramas
 
