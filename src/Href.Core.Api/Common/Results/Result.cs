@@ -4,6 +4,8 @@ public class Result
 {
     protected Result(bool isSuccess, Error error)
     {
+        ArgumentNullException.ThrowIfNull(error);
+
         if (isSuccess == (error != Error.None))
         {
             throw new ArgumentException("A successful result cannot have an error and a failed result must have one.", nameof(error));

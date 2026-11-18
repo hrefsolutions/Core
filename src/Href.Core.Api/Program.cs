@@ -34,6 +34,7 @@ try
     app.UseMiddleware<CorrelationIdMiddleware>();
     app.UseSerilogRequestLogging();
     app.UseExceptionHandler();
+    app.UseStatusCodePages();
     app.MapControllers();
 
     app.Run();

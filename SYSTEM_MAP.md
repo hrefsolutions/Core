@@ -13,7 +13,8 @@ Update this file in the same PR that changes any of the items below.
 1. `CorrelationIdMiddleware`: reads or creates `X-Correlation-Id`, returns it in the response and adds `CorrelationId` to every log line.
 2. `UseSerilogRequestLogging`: one log line per request.
 3. `UseExceptionHandler` + `GlobalExceptionHandler`: unhandled exceptions become RFC 7807 `ProblemDetails` (500). Every `ProblemDetails` includes `instance` and `correlationId`.
-4. `MapControllers`.
+4. `UseStatusCodePages`: empty error responses (such as 404 or 405) are formatted as `ProblemDetails`.
+5. `MapControllers`.
 
 ## Domain
 
@@ -21,7 +22,7 @@ Update this file in the same PR that changes any of the items below.
 |-----------------------------|-----------|-----------------------------------------------------------------------|
 | `Common.Domain.Entity`      | base      | `Guid Id` (UUIDv7, assigned on creation). Equality by type + `Id`.   |
 | `Common.Domain.IAuditableEntity` | interface | `CreatedAtUtc`, `UpdatedAtUtc` set by `AuditTimestampListener`. |
-| `Common.Results.Result` / `Result<T>` / `Error` | result | Expected failures return `Error`; exceptions are for unexpected faults. |
+| `Common.Results.Result` / `Result<T>` / `Error` | result | Expected failures return `Error` (`Validation`, `Unauthorized`, `Forbidden`, `NotFound`, `Conflict`, `Failure`); `ResultExtensions.ToProblem` converts them to `ProblemDetails` with `errorCode`. |
 
 No business entities yet.
 

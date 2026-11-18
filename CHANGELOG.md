@@ -12,6 +12,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - Result pattern (`Result`, `Result<T>`, `Error`) y entidades base con timestamps de auditoría.
 - `docker-compose.yml` para desarrollo (PostgreSQL 16 + Mailpit) y `Dockerfile` para Railway.
 - Flujo de trabajo: CI, Dependabot, template de PR, `CLAUDE.md` y `SYSTEM_MAP.md`.
+- `ResultExtensions.ToProblem` para convertir `Result` y `Error` (`Validation`, `Unauthorized`, `Forbidden`, `NotFound`, `Conflict`, `Failure`) en respuestas `ProblemDetails` con `errorCode`, y `UseStatusCodePages` para respuestas HTTP de error sin cuerpo.
 
 ### Cambiado
 
@@ -22,6 +23,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 - El contenedor escucha en `PORT` vía `ASPNETCORE_HTTP_PORTS`, sin el warning de override de `--urls` al arrancar.
 - `.env.example` refleja las variables del contenedor y el README lo usa con `docker run --env-file`.
+- `Result` valida que `Error` no sea `null` al construirse.
 
 ### Documentación
 
