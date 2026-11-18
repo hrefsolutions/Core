@@ -152,7 +152,7 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
         return new RotateClientSecretResponse(clientSecret);
     }
 
-    private Task<Application?> FindByAppKeyAsync(string appKey, CancellationToken cancellationToken) =>
-        session.Query<Application>()
+    private async Task<Application?> FindByAppKeyAsync(string appKey, CancellationToken cancellationToken) =>
+        await session.Query<Application>()
             .FirstOrDefaultAsync(application => application.AppKey == appKey, cancellationToken);
 }
