@@ -37,6 +37,9 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
   - Un script mergeado nunca se edita; cualquier cambio posterior va en un script nuevo.
   - Un script por PR que modifique el esquema, listado en la sección `Data / database` del PR.
   - Tabla de journal de DbUp: `schemaversions`.
+- Auditoría inmutable (`IAuditService`, `AuditLog`):
+  - `RecordAsync` se invoca dentro de la misma transacción e `ISession` del cambio de negocio.
+  - En `OldValues` y `NewValues` se pasan objetos/records de snapshot (serializados como `jsonb` en camelCase), nunca entidades de NHibernate directas, y **nunca** secretos, contraseñas ni hashes.
 
 ## Ramas
 
