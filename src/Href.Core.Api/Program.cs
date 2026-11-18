@@ -1,6 +1,7 @@
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
+using Href.Core.Api.Modules.Audit;
 using Microsoft.AspNetCore.Authentication;
 using Serilog;
 
@@ -29,8 +30,10 @@ try
             }
         });
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+    builder.Services.AddHttpContextAccessor();
     builder.Services.AddNHibernate(builder.Configuration);
     builder.Services.AddScoped<ApplicationService>();
+    builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services
         .AddAuthentication()
         .AddScheme<AuthenticationSchemeOptions, AppKeyAuthenticationHandler>(

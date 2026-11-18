@@ -34,6 +34,8 @@ Update this file in the same PR that changes any of the items below.
 | `Modules.Applications.Application` | entity | Client (satellite) application (`AppKey`, `Name`, `Description`, `Status` [`Active`\|`Suspended`], `ClientSecretHash` [SHA-256 hex], `ClientSecretRotatedAtUtc`, `AllowSelfRegistration`, `CreatedAtUtc`, `UpdatedAtUtc`). |
 | `Modules.Applications.ApplicationService` | service | Scoped service that orchestrates `Application` CRUD, status transitions and secret rotation over `ISession` with explicit transactions. |
 | `Modules.Applications.ClientSecretGenerator` | service | Generates 32-byte base64url secrets (43 chars) and verifies SHA-256 hashes with `CryptographicOperations.FixedTimeEquals`. |
+| `Modules.Audit.AuditLog` | entity | Immutable append-only audit entry (ISO 9001: `OccurredAtUtc`, `Action`, `EntityType`, `EntityId`, `ActorType` [`User`\|`Application`\|`System`\|`Anonymous`], `ActorId`, `AppKey`, `OldValues` [`jsonb`], `NewValues` [`jsonb`], `CorrelationId`, `IpAddress`, `UserAgent`). |
+| `Modules.Audit.IAuditService` / `AuditService` | service | Scoped service that records `AuditLog` entries on the active `ISession`, enriching actor, app, correlation ID, IP and user agent from `IHttpContextAccessor`. |
 
 ## Persistence
 
@@ -45,6 +47,7 @@ Update this file in the same PR that changes any of the items below.
 - Schema migrations: DbUp (`dbup-postgresql`, `Common/Persistence/DatabaseMigrator.cs`) applies forward-only embedded SQL scripts from `src/Href.Core.Api/Database/Migrations/NNNN_description.sql` on startup (`WithTransactionPerScript`), recording executed scripts in the `schemaversions` journal table. In `Development`, `EnsureDatabase.For.PostgresqlDatabase` creates the database if it does not exist.
 - Tables:
   - `applications` (`0001_create_applications.sql`, mapped by `ApplicationMapping`): `id`, `app_key` (unique index `ux_applications_app_key`), `name`, `description`, `status` (`CHECK IN ('Active', 'Suspended')`), `client_secret_hash`, `client_secret_rotated_at_utc`, `allow_self_registration`, `created_at_utc`, `updated_at_utc`.
+  - `audit_logs` (`0002_create_audit_logs.sql`, mapped by `AuditLogMapping` with `Mutable(false)` and `JsonbType`): append-only table protected by trigger `audit_logs_block_mutation` (`BEFORE UPDATE OR DELETE`), with indexes on `occurred_at_utc DESC`, `(app_key, occurred_at_utc DESC)`, `correlation_id`, and `(entity_type, entity_id)`.
 
 ## Environment variables
 
