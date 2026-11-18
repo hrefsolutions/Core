@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Href.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="NHibernate" Version="5.7.1" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />

@@ -30,8 +30,9 @@ No business entities yet.
 
 - NHibernate `ISessionFactory` (singleton) and `ISession` (scoped per request), registered in `Common/Persistence/NHibernateExtensions.cs`.
 - Dialect `PostgreSQL83Dialect`, driver `NpgsqlDriver`.
-- Mappings: every public `ClassMapping<T>` in the API assembly is picked up automatically.
-- Mapping conventions: `Id` uses `Generators.Assigned`; audit columns use `NHibernateUtil.UtcDateTime` and `timestamptz`.
+- Mappings: every public `ClassMapping<T>` in the API assembly is picked up automatically (`NHibernateExtensions.BuildSessionFactory` also accepts additional assemblies for tests).
+- Mapping conventions: tables and columns in `snake_case` (plural table names), explicit `Table(...)`/`Column(...)`, enums stored as strings (`varchar`), `Id` with `Generators.Assigned`, and audit columns with `NHibernateUtil.UtcDateTime` (`timestamptz`).
+- Transactions: reads require no explicit transaction; writes open an explicit transaction (`session.BeginTransaction()` + `CommitAsync`).
 - Schema: no tables yet. There is no automatic schema generation.
 
 ## Environment variables
