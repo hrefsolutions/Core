@@ -4,9 +4,16 @@ Update this file in the same PR that changes any of the items below.
 
 ## HTTP endpoints
 
-| Method | Route     | Controller         | Description                                                            |
-|--------|-----------|--------------------|------------------------------------------------------------------------|
-| GET    | `/health` | `HealthController` | `200` when the API is alive and PostgreSQL answers `SELECT 1`, else `503`. |
+| Method | Route                             | Controller               | Description                                                                                     |
+|--------|-----------------------------------|--------------------------|-------------------------------------------------------------------------------------------------|
+| GET    | `/health`                         | `HealthController`       | `200` when the API is alive and PostgreSQL answers `SELECT 1`, else `503`.                      |
+| POST   | `/api/apps`                       | `ApplicationsController` | Creates a client application (`201` + `Location` + one-time `clientSecret`; `400`/`409`).       |
+| GET    | `/api/apps`                       | `ApplicationsController` | Lists all client applications ordered by `name` (`200`).                                        |
+| GET    | `/api/apps/{appKey}`              | `ApplicationsController` | Returns a client application by `appKey` (`200` or `404`).                                      |
+| PUT    | `/api/apps/{appKey}`              | `ApplicationsController` | Updates `name`, `description` and `allowSelfRegistration` (`200`, `400`, `404`).                |
+| PATCH  | `/api/apps/{appKey}/status`       | `ApplicationsController` | Activates or suspends an application (`Active` \| `Suspended`, `200`, `400`, `404`, `409`).     |
+| POST   | `/api/apps/{appKey}/secret/rotate`| `ApplicationsController` | Rotates the application `clientSecret`, invalidating the previous one immediately (`200`, `404`).|
+| GET    | `/api/apps/me`                    | `ApplicationsController` | M2M (`Application` policy, `X-App-Key` + `X-App-Secret`): returns the authenticated app (`200`, `401`, `403`). |
 
 ## Request pipeline (`Program.cs`)
 
@@ -14,7 +21,8 @@ Update this file in the same PR that changes any of the items below.
 2. `UseSerilogRequestLogging`: one log line per request.
 3. `UseExceptionHandler` + `GlobalExceptionHandler`: unhandled exceptions become RFC 7807 `ProblemDetails` (500). Every `ProblemDetails` includes `instance` and `correlationId`.
 4. `UseStatusCodePages`: empty error responses (such as 404 or 405) are formatted as `ProblemDetails`.
-5. `MapControllers`.
+5. `UseAuthentication` + `UseAuthorization`: scheme `AppKey` (`AppKeyAuthenticationHandler`, headers `X-App-Key` and `X-App-Secret`, claims `app_id` and `app_key`, pushes `AppKey` to Serilog `LogContext`) and policy `Application`.
+6. `MapControllers`.
 
 ## Domain
 
@@ -23,8 +31,9 @@ Update this file in the same PR that changes any of the items below.
 | `Common.Domain.Entity`      | base      | `Guid Id` (UUIDv7, assigned on creation). Equality by type + `Id`.   |
 | `Common.Domain.IAuditableEntity` | interface | `CreatedAtUtc`, `UpdatedAtUtc` set by `AuditTimestampListener`. |
 | `Common.Results.Result` / `Result<T>` / `Error` | result | Expected failures return `Error` (`Validation`, `Unauthorized`, `Forbidden`, `NotFound`, `Conflict`, `Failure`); `ResultExtensions.ToProblem` converts them to `ProblemDetails` with `errorCode`. |
-
-No business entities yet.
+| `Modules.Applications.Application` | entity | Client (satellite) application (`AppKey`, `Name`, `Description`, `Status` [`Active`\|`Suspended`], `ClientSecretHash` [SHA-256 hex], `ClientSecretRotatedAtUtc`, `AllowSelfRegistration`, `CreatedAtUtc`, `UpdatedAtUtc`). |
+| `Modules.Applications.ApplicationService` | service | Scoped service that orchestrates `Application` CRUD, status transitions and secret rotation over `ISession` with explicit transactions. |
+| `Modules.Applications.ClientSecretGenerator` | service | Generates 32-byte base64url secrets (43 chars) and verifies SHA-256 hashes with `CryptographicOperations.FixedTimeEquals`. |
 
 ## Persistence
 
@@ -34,6 +43,8 @@ No business entities yet.
 - Mapping conventions: tables and columns in `snake_case` (plural table names), explicit `Table(...)`/`Column(...)`, enums stored as strings (`varchar`), `Id` with `Generators.Assigned`, and audit columns with `NHibernateUtil.UtcDateTime` (`timestamptz`).
 - Transactions: reads require no explicit transaction; writes open an explicit transaction (`session.BeginTransaction()` + `CommitAsync`).
 - Schema migrations: DbUp (`dbup-postgresql`, `Common/Persistence/DatabaseMigrator.cs`) applies forward-only embedded SQL scripts from `src/Href.Core.Api/Database/Migrations/NNNN_description.sql` on startup (`WithTransactionPerScript`), recording executed scripts in the `schemaversions` journal table. In `Development`, `EnsureDatabase.For.PostgresqlDatabase` creates the database if it does not exist.
+- Tables:
+  - `applications` (`0001_create_applications.sql`, mapped by `ApplicationMapping`): `id`, `app_key` (unique index `ux_applications_app_key`), `name`, `description`, `status` (`CHECK IN ('Active', 'Suspended')`), `client_secret_hash`, `client_secret_rotated_at_utc`, `allow_self_registration`, `created_at_utc`, `updated_at_utc`.
 
 ## Environment variables
 

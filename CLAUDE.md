@@ -14,10 +14,14 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 
 ## Convenciones de código
 
-- Sin repositorios genéricos ni AutoMapper. Los handlers/controllers usan `ISession` de NHibernate directo.
+- Sin repositorios genéricos ni AutoMapper.
+- Separación por módulo en 3 capas:
+  - **Controller** (`*Controller`): adaptador HTTP puro (ruteo, códigos de estado y conversión `Result` → `ToProblem`). No usa `ISession` ni maneja transacciones.
+  - **Application Service** (`*Service`, registrado como `Scoped`): orquesta el caso de uso, consulta y persiste con `ISession` directo, abre/commitea la transacción y devuelve `Result` / `Result<T>`.
+  - **Entidad de dominio** (`Entity`): contiene las reglas de negocio e invariantes puras.
 - Transacciones:
   - Lecturas: sin transacción explícita.
-  - Escrituras: `using var transaction = session.BeginTransaction();` ... `await transaction.CommitAsync(cancellationToken);` explícito dentro de la acción del controller (o del servicio que invoca). Sin filtro implícito de transacción por request.
+  - Escrituras: `using var transaction = session.BeginTransaction();` ... `await transaction.CommitAsync(cancellationToken);` explícito dentro del servicio del módulo. Sin filtro implícito de transacción por request.
 - Errores esperados: `Result` / `Result<T>` con `Error`. Las excepciones son para fallas inesperadas (las atrapa `GlobalExceptionHandler`).
 - Entidades: heredan de `Entity`, miembros `virtual`. Mapping con `ClassMapping<T>` público en el assembly de la API (se registra solo).
 - Convenciones de nombres y mappings de base de datos:
