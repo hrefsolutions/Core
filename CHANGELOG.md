@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.1.1 - 2026-11-18
+
 ### Corregido
 
 - El `AppKey` de la aplicación autenticada ahora llega a los logs: `AppKeyLogContextMiddleware` lo agrega al `LogContext` de Serilog y a la línea de cierre del request, y el formato de consola lo muestra (`[{AppKey}]`). En v0.1.0 el handler lo agregaba dentro de un método `async` y se perdía.
