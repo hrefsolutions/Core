@@ -1,42 +1,42 @@
 <!--
-Base: develop. A main solo llegan releases (develop → main). Los issues de una épica apuntan a su rama epic/<id>-<slug>.
-Título: Conventional Commits, describe solo el cambio y nunca nombra ramas. Ej.: feat(api): add customer endpoint
-Release con bump de versión: chore: release vX.Y.Z
+Base: develop. Only releases target main (develop → main). Epic issues target their epic/<id>-<slug> branch.
+Title: Conventional Commits, describes only the change and never names branches. E.g.: feat(api): add customer endpoint
+Release with version bump: chore: release vX.Y.Z
 -->
 
-Cierra #
+Closes #
 
-## Qué cambia y por qué
+## What changes and why
 
-<!-- El problema que ve el usuario (o el riesgo) y cómo lo resuelve este PR. -->
+<!-- The user-visible problem (or risk) and how this PR resolves it. -->
 
-## Cambios
+## Changes
 
 - 
 
-## Datos / base de datos
+## Data / database
 
-- [ ] Sin cambios en el esquema.
-- [ ] Hay cambios de esquema, mappings de NHibernate o migraciones. Pasos manuales:
+- [ ] No schema changes.
+- [ ] Includes schema changes, NHibernate mappings or migrations. Manual steps:
 
 ## Release
 
-- [ ] No cambia la versión.
-- [ ] Sube la versión a x.y.z (`src/Href.Core.Api/Href.Core.Api.csproj`, `CHANGELOG.md`).
-- [ ] Hay cambios que ve el usuario.
+- [ ] Does not change the version.
+- [ ] Bumps the version to x.y.z (`src/Href.Core.Api/Href.Core.Api.csproj`, `CHANGELOG.md`).
+- [ ] Includes user-facing changes.
 
-## Verificación
+## Verification
 
-- [ ] `dotnet build Href.Core.sln -c Release` sin errores.
-- [ ] `dotnet test Href.Core.sln -c Release` en verde. Tests nuevos o modificados:
-- [ ] Prueba manual contra la API (curl / cliente HTTP), si aplica.
+- [ ] `dotnet build Href.Core.sln -c Release` succeeds without errors.
+- [ ] `dotnet test Href.Core.sln -c Release` passes. New or modified tests:
+- [ ] Manual check against the API (curl / HTTP client), if applicable.
 
-Para probar:
+To test:
 
 1. 
 
-## Antes de mergear
+## Before merging
 
-- [ ] Sin comentarios en línea.
-- [ ] Sin secretos ni archivos locales (`.env`, `appsettings.*.local.json`, credenciales).
-- [ ] Pasos manuales pendientes:
+- [ ] No inline comments.
+- [ ] No secrets or local files (`.env`, `appsettings.*.local.json`, credentials).
+- [ ] Pending manual steps:

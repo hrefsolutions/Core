@@ -28,3 +28,4 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 ### Documentación
 
 - README: cómo dejar la API corriendo con `dotnet watch` (Hot Reload) sin F5 en cada cambio.
+- Template de PR en inglés y guía `CLAUDE.md` actualizada con el cierre de issues al mergear en la rama de la épica.
