@@ -4,6 +4,13 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Agregado
+
+- Entidades `EmailTemplate` y `Notification` (`Modules/Notifications/`) con sus mappings NHibernate y la migración `0003_create_notifications_and_email_templates.sql` (tablas `email_templates` y `notifications`, índice único `ux_email_templates_key` e índices `ix_notifications_status_next_attempt_at_utc` e `ix_notifications_app_key_created_at_utc`). Los cuerpos `html_body` y `text_body` son `TEXT`.
+- Máquina de estados de `Notification` (`Pending` → `Processing` → `Sent` | `Failed`) con reintentos. El intento se cuenta al reclamar (`MarkProcessing` incrementa `Attempts` y se rechaza con `Notifications.InvalidTransition` si `Attempts >= MaxAttempts`, por lo que nunca hay un 4.º intento). Tras el 1.º fallo vuelve a `Pending` con espera de 1 minuto, tras el 2.º con 5 minutos, y tras el 3.º pasa a `Failed`. `RecoverStuck` libera una notificación trabada en `Processing` (por ejemplo tras la caída de un worker) sin tocar `Attempts`: pasa a `Failed` con `LastError` = `Processing timed out` si ya no quedan intentos, o vuelve a `Pending` lista para reclamarse. Con tres reclamos seguidos de una caída la notificación termina `Failed`. Desde `Sent` y `Failed` no hay transiciones; una transición inválida devuelve el error `Conflict` `Notifications.InvalidTransition` sin modificar el estado. `LastError` se conserva como historial tras un envío exitoso.
+- Concurrencia optimista en `Notification` (columna `version`, `Version` en el mapping): dos sesiones que reclaman la misma notificación no pueden ambas confirmar el cambio (la segunda recibe `StaleObjectStateException`). El SQL directo que modifique una notificación debe reflejar los métodos de dominio y siempre setear `version = version + 1` y `updated_at_utc`. Reclamo: `attempts = attempts + 1`, `status = 'Processing'`, `processing_started_at_utc`, solo para filas con `attempts < max_attempts`. Recuperación: no toca `attempts`, `status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Pending' END` y `processing_started_at_utc = NULL`.
+- Validación de entradas de `Notification` y `EmailTemplate`: se rechaza `NUL` en todos los textos (cuerpos incluidos) y cualquier carácter de control o separador U+2028/U+2029 en los campos de una sola línea; las transiciones exigen `DateTime` con `Kind` UTC (`ArgumentException` en caso contrario); `LastError` se trunca a 2000 sin dejar un surrogate alto huérfano.
+
 ## 0.1.1 - 2026-11-18
 
 ### Corregido
