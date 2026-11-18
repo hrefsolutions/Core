@@ -16,6 +16,10 @@ public static class ApplicationErrors
         "Applications.InvalidDescription",
         "The application description cannot exceed 500 characters.");
 
+    public static readonly Error InvalidStatus = Error.Validation(
+        "Applications.InvalidStatus",
+        "The application status must be 'Active' or 'Suspended'.");
+
     public static readonly Error AlreadySuspended = Error.Conflict(
         "Applications.AlreadySuspended",
         "The application is already suspended.");

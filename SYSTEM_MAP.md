@@ -4,9 +4,15 @@ Update this file in the same PR that changes any of the items below.
 
 ## HTTP endpoints
 
-| Method | Route     | Controller         | Description                                                            |
-|--------|-----------|--------------------|------------------------------------------------------------------------|
-| GET    | `/health` | `HealthController` | `200` when the API is alive and PostgreSQL answers `SELECT 1`, else `503`. |
+| Method | Route                             | Controller               | Description                                                                                     |
+|--------|-----------------------------------|--------------------------|-------------------------------------------------------------------------------------------------|
+| GET    | `/health`                         | `HealthController`       | `200` when the API is alive and PostgreSQL answers `SELECT 1`, else `503`.                      |
+| POST   | `/api/apps`                       | `ApplicationsController` | Creates a client application (`201` + `Location` + one-time `clientSecret`; `400`/`409`).       |
+| GET    | `/api/apps`                       | `ApplicationsController` | Lists all client applications ordered by `name` (`200`).                                        |
+| GET    | `/api/apps/{appKey}`              | `ApplicationsController` | Returns a client application by `appKey` (`200` or `404`).                                      |
+| PUT    | `/api/apps/{appKey}`              | `ApplicationsController` | Updates `name`, `description` and `allowSelfRegistration` (`200`, `400`, `404`).                |
+| PATCH  | `/api/apps/{appKey}/status`       | `ApplicationsController` | Activates or suspends an application (`Active` \| `Suspended`, `200`, `400`, `404`, `409`).     |
+| POST   | `/api/apps/{appKey}/secret/rotate`| `ApplicationsController` | Rotates the application `clientSecret`, invalidating the previous one immediately (`200`, `404`).|
 
 ## Request pipeline (`Program.cs`)
 
@@ -24,6 +30,7 @@ Update this file in the same PR that changes any of the items below.
 | `Common.Domain.IAuditableEntity` | interface | `CreatedAtUtc`, `UpdatedAtUtc` set by `AuditTimestampListener`. |
 | `Common.Results.Result` / `Result<T>` / `Error` | result | Expected failures return `Error` (`Validation`, `Unauthorized`, `Forbidden`, `NotFound`, `Conflict`, `Failure`); `ResultExtensions.ToProblem` converts them to `ProblemDetails` with `errorCode`. |
 | `Modules.Applications.Application` | entity | Client (satellite) application (`AppKey`, `Name`, `Description`, `Status` [`Active`\|`Suspended`], `ClientSecretHash` [SHA-256 hex], `ClientSecretRotatedAtUtc`, `AllowSelfRegistration`, `CreatedAtUtc`, `UpdatedAtUtc`). |
+| `Modules.Applications.ApplicationService` | service | Scoped service that orchestrates `Application` CRUD, status transitions and secret rotation over `ISession` with explicit transactions. |
 | `Modules.Applications.ClientSecretGenerator` | service | Generates 32-byte base64url secrets (43 chars) and verifies SHA-256 hashes with `CryptographicOperations.FixedTimeEquals`. |
 
 ## Persistence
