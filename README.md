@@ -6,7 +6,7 @@ Core REST API for Href Solutions.
 
 ## Run locally
 
-Requirements: .NET 10 SDK and Docker.
+Requirements: .NET 10 SDK (pinned by `global.json`) and Docker.
 
 1. Start PostgreSQL and Mailpit:
 
@@ -14,7 +14,7 @@ Requirements: .NET 10 SDK and Docker.
    docker compose up -d
    ```
 
-2. Run the API (Development profile, `http://localhost:8080`):
+2. Run the API (Development profile, `http://localhost:8080`) from Visual Studio (`http` profile) or:
 
    ```bash
    dotnet run --project src/Href.Core.Api
@@ -28,6 +28,18 @@ Requirements: .NET 10 SDK and Docker.
 
 Mailpit UI: <http://localhost:8025> (SMTP on `localhost:1025`).
 
+### Keep the API running while you code
+
+`dotnet watch` keeps the API up on `http://localhost:8080` and applies every saved change (Hot Reload), so there is no need to press F5 after each edit:
+
+```bash
+dotnet watch --project src/Href.Core.Api
+```
+
+- Edits that Hot Reload cannot apply (for example in `Program.cs`) restart the app; `Ctrl+R` forces a restart.
+- While it runs, Windows locks the API assembly: a build or test run from Visual Studio can fail with "file in use". Stop it with `Ctrl+C` before building or running tests.
+- Visual Studio alternative: start with `Ctrl+F5` (without debugging) and enable *Hot Reload on File Save*.
+
 ## Build and test
 
 ```bash
@@ -40,17 +52,29 @@ dotnet test Href.Core.sln
 
 ## Run the container
 
-```bash
-docker build -t href-core .
-```
+Optional, only to check the production image before deploying. Day-to-day development does not need it.
+
+The whole stack (PostgreSQL, Mailpit and the API image built locally from the `Dockerfile`), already configured, on `http://localhost:8080`:
 
 ```bash
-docker run --rm -p 8080:8080 -e ConnectionStrings__DefaultConnection="Host=host.docker.internal;Port=5432;Database=href_core;Username=href;Password=href" href-core
+docker compose --profile container up -d --build
+```
+
+Stop the API started from Visual Studio first: both use port 8080. When done:
+
+```bash
+docker compose --profile container down
+```
+
+To run only the image, pass the variables listed in `.env.example`:
+
+```bash
+docker run --rm -p 8080:8080 --env-file .env.example href-core
 ```
 
 ## Configuration
 
-See `.env.example` and `SYSTEM_MAP.md`. On Railway set `ConnectionStrings__DefaultConnection` (Npgsql format, for example `Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}`) and use `/health` as the health check path. Railway sets `PORT`.
+`.env.example` lists the variables the container needs (the API itself does not read `.env`; `dotnet run` uses `appsettings.Development.json`). Details in `SYSTEM_MAP.md`. On Railway set `ConnectionStrings__DefaultConnection` (Npgsql format, for example `Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}`) and use `/health` as the health check path. Railway sets `PORT`.
 
 ## Contributing
 
