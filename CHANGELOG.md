@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.1.0 - 2026-11-18
+
 ### Agregado
 
 - Bootstrap de la API en .NET 10 (Controllers) con Serilog, NHibernate (`Mapping.ByCode`) y PostgreSQL.
@@ -20,6 +22,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - Entidad `Application` (`Modules/Applications/`), generador/verificador de `ClientSecret` (32 bytes base64url + SHA-256 en tiempo constante), mapping NHibernate (`ApplicationMapping`) y migración `0001_create_applications.sql`.
 - Endpoints de administración de aplicaciones en `ApplicationsController` (`POST /api/apps`, `GET /api/apps`, `GET /api/apps/{appKey}`, `PUT /api/apps/{appKey}`, `PATCH /api/apps/{appKey}/status` y `POST /api/apps/{appKey}/secret/rotate`) con tests de integración HTTP.
 - Autenticación M2M de aplicaciones cliente (`AppKeyAuthenticationHandler`, esquema `AppKey`, policy `Application`, headers `X-App-Key` + `X-App-Secret`, claims `app_id`/`app_key`, enriquecimiento de `AppKey` en Serilog `LogContext`) y endpoint `GET /api/apps/me`.
+- Base de auditoría inmutable ISO 9001 (`AuditLog`, `AuditLogMapping` con `Mutable(false)`, `JsonbType`, `IAuditService` / `AuditService` y migración `0002_create_audit_logs.sql` con trigger `audit_logs_block_mutation`).
 
 ### Cambiado
 
