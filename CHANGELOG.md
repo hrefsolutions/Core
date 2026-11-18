@@ -17,6 +17,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - Tests con `FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`) para `AuditTimestampListener` (`CreatedAtUtc` y `UpdatedAtUtc`) y convención de mapping de columnas de auditoría en `CLAUDE.md`.
 - Migraciones de esquema con DbUp (`dbup-postgresql`, `DatabaseMigrator`): scripts SQL embebidos en `Database/Migrations/` aplicados al arrancar (`Database:MigrateOnStartup`, journal `schemaversions`).
 - Suite de tests de integración con Testcontainers (`Testcontainers.PostgreSql`, `postgres:16-alpine`) y `WebApplicationFactory<Program>` (`PostgresFixture`, `ApiFactory`, `PersistenceIntegrationTests` y `HealthEndpointIntegrationTests`).
+- Entidad `Application` (`Modules/Applications/`), generador/verificador de `ClientSecret` (32 bytes base64url + SHA-256 en tiempo constante), mapping NHibernate (`ApplicationMapping`) y migración `0001_create_applications.sql`.
 
 ### Cambiado
 
