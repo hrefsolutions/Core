@@ -15,4 +15,4 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 8080
 USER $APP_UID
 
-ENTRYPOINT ["sh", "-c", "exec dotnet Href.Core.Api.dll --urls http://0.0.0.0:${PORT:-8080}"]
+ENTRYPOINT ["sh", "-c", "export ASPNETCORE_HTTP_PORTS=${PORT:-8080} && exec dotnet Href.Core.Api.dll"]
