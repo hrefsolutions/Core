@@ -25,7 +25,12 @@ public static class NHibernateExtensions
         }
 
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton(provider => BuildSessionFactory(connectionString, provider.GetRequiredService<TimeProvider>()));
+        services.AddSingleton(provider =>
+        {
+            var configured = provider.GetService<IConfiguration>()?.GetConnectionString("DefaultConnection");
+            var effectiveConnectionString = string.IsNullOrWhiteSpace(configured) ? connectionString : configured;
+            return BuildSessionFactory(effectiveConnectionString, provider.GetRequiredService<TimeProvider>());
+        });
         services.AddScoped(provider => provider.GetRequiredService<ISessionFactory>().OpenSession());
 
         return services;

@@ -16,6 +16,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - Overload interno de `NHibernateExtensions.BuildSessionFactory` con soporte para assemblies de mappings adicionales en tests (`InternalsVisibleTo("Href.Core.Tests")`) y tests unitarios de registro y configuración de NHibernate.
 - Tests con `FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`) para `AuditTimestampListener` (`CreatedAtUtc` y `UpdatedAtUtc`) y convención de mapping de columnas de auditoría en `CLAUDE.md`.
 - Migraciones de esquema con DbUp (`dbup-postgresql`, `DatabaseMigrator`): scripts SQL embebidos en `Database/Migrations/` aplicados al arrancar (`Database:MigrateOnStartup`, journal `schemaversions`).
+- Suite de tests de integración con Testcontainers (`Testcontainers.PostgreSql`, `postgres:16-alpine`) y `WebApplicationFactory<Program>` (`PostgresFixture`, `ApiFactory`, `PersistenceIntegrationTests` y `HealthEndpointIntegrationTests`).
 
 ### Cambiado
 

@@ -46,8 +46,16 @@ dotnet watch --project src/Href.Core.Api
 dotnet build Href.Core.sln
 ```
 
+Integration tests start a real PostgreSQL 16 container with Testcontainers, so Docker Desktop must be running:
+
 ```bash
 dotnet test Href.Core.sln
+```
+
+To run only unit tests (without Docker):
+
+```bash
+dotnet test Href.Core.sln --filter Category!=Integration
 ```
 
 ## Run the container
