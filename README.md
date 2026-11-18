@@ -6,15 +6,15 @@ Core REST API for Href Solutions.
 
 ## Run locally
 
-Requirements: .NET 10 SDK and Docker.
+Requirements: .NET 10 SDK (pinned by `global.json`) and Docker.
 
 1. Start PostgreSQL and Mailpit:
 
    ```bash
-   docker compose up -d
+   docker compose up -d postgres mailpit
    ```
 
-2. Run the API (Development profile, `http://localhost:8080`):
+2. Run the API (Development profile, `http://localhost:8080`) from Visual Studio (`http` profile) or:
 
    ```bash
    dotnet run --project src/Href.Core.Api
@@ -40,16 +40,18 @@ dotnet test Href.Core.sln
 
 ## Run the container
 
-```bash
-docker build -t href-core .
-```
+The whole stack (PostgreSQL, Mailpit and the API image built from the `Dockerfile`), already configured, on `http://localhost:8080`:
 
 ```bash
-cp .env.example .env
+docker compose up -d --build
 ```
 
+Stop the API started from Visual Studio first: both use port 8080. Afterwards the stack can be stopped and started from Docker Desktop.
+
+To run only the image, pass the variables listed in `.env.example`:
+
 ```bash
-docker run --rm -p 8080:8080 --env-file .env href-core
+docker run --rm -p 8080:8080 --env-file .env.example href-core
 ```
 
 ## Configuration

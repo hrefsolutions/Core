@@ -13,6 +13,11 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - `docker-compose.yml` para desarrollo (PostgreSQL 16 + Mailpit) y `Dockerfile` para Railway.
 - Flujo de trabajo: CI, Dependabot, template de PR, `CLAUDE.md` y `SYSTEM_MAP.md`.
 
+### Cambiado
+
+- `global.json` fija el SDK en .NET 10 (`10.0.100` con `rollForward: latestFeature`) y el CI lo usa.
+- `docker-compose.yml` incluye el servicio `api` (imagen del `Dockerfile`, ya configurada contra el PostgreSQL del compose): `docker compose up -d --build` levanta todo en `http://localhost:8080`.
+
 ### Corregido
 
 - El contenedor escucha en `PORT` vía `ASPNETCORE_HTTP_PORTS`, sin el warning de override de `--urls` al arrancar.
