@@ -34,6 +34,7 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 
 ## Commits
 
+- No commitear ni pushear hasta que el usuario confirme que el build y los tests pasaron y dé el OK explícito. Si corresponde dividir en más de un commit lógico, se hace recién en ese momento.
 - En inglés, Conventional Commits: `type(scope): subject`. Ej.: `feat(api): add customer endpoint`, `fix(persistence): handle null audit timestamp`.
 - Scopes sugeridos: `api`, `persistence`, `domain`, `infra`, `deps`, `ci`.
 - Sin `Co-Authored-By: Claude` ni otros trailers de atribución.
@@ -100,9 +101,10 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 
 1. Claude escribe el plan y lo pasa en el chat.
 2. Espera aprobación antes de escribir código.
-3. Con la aprobación, crea un worktree desde `develop` (o desde la rama de la épica) e implementa.
-4. Revisa el resultado, abre el PR y pasa el link.
-5. Cuando el PR está aprobado y el bloque está completo, abre el PR de release.
+3. Con la aprobación, crea la rama (o worktree) desde `develop` (o desde la rama de la épica) e implementa dejando los cambios sin commitear.
+4. Espera a que el usuario corra el build (`Ctrl+Shift+B`) y los tests (`Test → Run All Tests`) en Visual Studio y dé el OK.
+5. Con el OK, arma el/los commits, pushea, abre el PR y pasa el link.
+6. Cuando el PR está aprobado y el bloque está completo, abre el PR de release.
 
 ## Dependabot
 
