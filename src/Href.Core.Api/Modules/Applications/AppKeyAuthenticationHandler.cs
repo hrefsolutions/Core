@@ -4,7 +4,6 @@ using Href.Core.Api.Common.Results;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Serilog.Context;
 
 namespace Href.Core.Api.Modules.Applications;
 
@@ -56,8 +55,6 @@ public sealed class AppKeyAuthenticationHandler(
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
-
-        Context.Response.RegisterForDispose(LogContext.PushProperty("AppKey", application.AppKey));
 
         return AuthenticateResult.Success(ticket);
     }

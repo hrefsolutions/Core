@@ -3,6 +3,7 @@ using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -30,8 +31,16 @@ try
             }
         });
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = 1;
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddNHibernate(builder.Configuration);
+    builder.Services.AddScoped<DatabaseHealthService>();
     builder.Services.AddScoped<ApplicationService>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services
@@ -49,12 +58,14 @@ try
 
     DatabaseMigrator.MigrateIfEnabled(app.Configuration, app.Environment, app.Logger);
 
+    app.UseForwardedHeaders();
     app.UseMiddleware<CorrelationIdMiddleware>();
     app.UseSerilogRequestLogging();
     app.UseExceptionHandler();
     app.UseStatusCodePages();
     app.UseAuthentication();
     app.UseAuthorization();
+    app.UseMiddleware<AppKeyLogContextMiddleware>();
     app.MapControllers();
 
     app.Run();

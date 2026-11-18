@@ -48,7 +48,7 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 - Las ramas de trabajo salen siempre de `develop`: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, `refactor/<slug>`.
 - Épicas:
   1. Se crea `epic/<id>-<slug>` desde `develop`.
-  2. Cada issue de la épica tiene su rama, que sale de la rama de la épica, y su PR apunta a la épica.
+  2. Cada issue de la épica tiene su rama, que sale de la rama de la épica, y su PR apunta a la épica. Excepción: si el usuario lo autoriza explícitamente, el issue se trabaja directo en la rama de la épica.
   3. Una vez que el PR de un issue se mergea a la rama de la épica, se espera confirmación del usuario y se cierra el issue con un comentario coherente sobre la completitud de la tarea.
   4. Con todos los issues mergeados, se abre el PR de la épica → `develop`.
   5. Después, el release `develop` → `main`.
@@ -108,6 +108,33 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
   dotnet test Href.Core.sln -c Release
   ```
 
+## Ciclo de verificación al implementar (feedback loop)
+
+Aplica a cualquier agente que implemente en este repo (Claude, Gemini u otro). Regla de base: **lo que se declara tiene que estar verificado**. Si algo no se pudo verificar, se dice explícitamente; no se da por hecho.
+
+1. **Antes de escribir código**, listar cada criterio de aceptación y cada comportamiento que se va a anunciar (en el `CHANGELOG.md`, el `SYSTEM_MAP.md` o el PR) y, al lado, cómo se verifica: el nombre del test o el chequeo manual.
+2. **Test primero cuando se pueda**: escribir el test del comportamiento y confirmar que fallaría sin el cambio. Un test que también pasa con el código roto no verifica el requisito.
+3. **Implementar** el cambio mínimo que hace pasar ese test.
+4. **Autorrevisar el diff** antes de entregarlo:
+   - contra las convenciones de esta guía (capas, transacciones, mappings, sin comentarios en línea);
+   - contra entradas hostiles: valores inválidos, numéricos o combinados en enums, vacíos/espacios, mayúsculas, `null`;
+   - contra concurrencia: dos requests iguales al mismo tiempo (chequeo-y-después-insert, índices únicos);
+   - contra el entorno real: Railway detrás de un proxy, contexto `async`, orden del pipeline de middlewares.
+5. **Cotejar lo declarado**: cada línea del `CHANGELOG.md`, del `SYSTEM_MAP.md` y de la descripción del PR tiene que estar respaldada por un test o un chequeo del punto 1. Si no, se corrige el texto o se agrega la verificación.
+6. **Entregar al usuario** para build y tests. Si algo falla, se corrige la causa raíz y se vuelve al punto 4.
+7. **En el PR**, las casillas se marcan solo si son ciertas, y la sección `Verification` dice qué se verificó y cómo.
+
+## Trampas conocidas
+
+Errores que ya pasaron en este repo (revisión de v0.1.0, PR #67):
+
+- `LogContext.PushProperty` (o cualquier `AsyncLocal`) dentro de un método `async` se pierde cuando el método termina: no llega a quien lo llamó. Para enriquecer los logs de un request se usa un middleware que envuelve `next` y, para la línea final del request, `IDiagnosticContext`.
+- Sin esquema de autenticación por defecto, `HttpContext.User` lo carga la policy en `UseAuthorization`, no `UseAuthentication`. Todo middleware que lea el usuario va después de `UseAuthorization`.
+- `Enum.TryParse` acepta números (`"1"`) y combinaciones (`"Active,Suspended"`). Para entradas de la API se valida contra los nombres exactos.
+- Chequear que algo no existe y después insertarlo no es atómico. La fuente de verdad es el índice único: se atrapa la violación (`23505`) y se devuelve el `Error` de dominio (409), no un 500.
+- Detrás del proxy de Railway, `RemoteIpAddress` es la IP del proxy si no se usa `UseForwardedHeaders`.
+- Un template de Serilog solo muestra en consola las propiedades que nombra (`{AppKey}`); agregar la propiedad al evento no alcanza para verla.
+
 ## Releases
 
 - Se agrupan varios issues por release, no uno por PR. Antes de abrir un release, Claude pregunta qué bloque va.
@@ -127,7 +154,7 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 
 1. Claude escribe el plan y lo pasa en el chat.
 2. Espera aprobación antes de escribir código.
-3. Con la aprobación, crea la rama (o worktree) desde `develop` (o desde la rama de la épica) e implementa dejando los cambios sin commitear.
+3. Con la aprobación, crea la rama (o worktree) desde `develop` (o desde la rama de la épica) e implementa siguiendo el ciclo de verificación, dejando los cambios sin commitear.
 4. Espera a que el usuario corra el build (`Ctrl+Shift+B`) y los tests (`Test → Run All Tests`) en Visual Studio y dé el OK.
 5. Con el OK, arma el/los commits, pushea, abre el PR y pasa el link.
 6. Una vez que el PR del issue se mergea a la rama de la épica, espera confirmación del usuario y cierra el issue con un comentario coherente sobre la completitud de la tarea.
