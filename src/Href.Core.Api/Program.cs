@@ -1,5 +1,6 @@
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
+using Href.Core.Api.Modules.Applications;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -28,6 +29,7 @@ try
         });
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
     builder.Services.AddNHibernate(builder.Configuration);
+    builder.Services.AddScoped<ApplicationService>();
 
     var app = builder.Build();
 
