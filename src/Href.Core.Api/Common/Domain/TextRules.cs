@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Net.Mail;
 
-namespace Href.Core.Api.Modules.Notifications;
+namespace Href.Core.Api.Common.Domain;
 
 internal static class TextRules
 {
