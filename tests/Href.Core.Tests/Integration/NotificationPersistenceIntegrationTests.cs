@@ -60,6 +60,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task EmailTemplate_InsertAndLoad_RoundTripsAllPropertiesAndSetsAuditTimestamps()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var clock = new FakeTimeProvider(StartInstant);
         using var sessionFactory = postgres.BuildSessionFactory(clock);
         var key = UniqueKey("tpl");
@@ -76,12 +77,12 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(template);
-            await transaction.CommitAsync();
+            await session.SaveAsync(template, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<EmailTemplate>(template.Id);
+        var loaded = await session.GetAsync<EmailTemplate>(template.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(key, loaded.Key);
@@ -100,18 +101,19 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task EmailTemplate_WithNullOptionals_RoundTripsNulls()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var template = EmailTemplate.Create(UniqueKey("tpl"), "Plain", null, "Subject", "<p>x</p>", null, false).Value;
 
         using var session = postgres.SessionFactory.OpenSession();
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(template);
-            await transaction.CommitAsync();
+            await session.SaveAsync(template, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<EmailTemplate>(template.Id);
+        var loaded = await session.GetAsync<EmailTemplate>(template.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Null(loaded.Description);
@@ -122,6 +124,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task EmailTemplate_WithLongBodies_RoundTripsThemIntact()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var htmlBody = "<p>" + string.Concat(Enumerable.Repeat("0123456789", 2000)) + "</p>";
         var textBody = string.Concat(Enumerable.Repeat("abcdefghij", 2000));
         var template = EmailTemplate.Create(UniqueKey("tpl"), "Long", null, "Subject", htmlBody, textBody, false).Value;
@@ -130,12 +133,12 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(template);
-            await transaction.CommitAsync();
+            await session.SaveAsync(template, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<EmailTemplate>(template.Id);
+        var loaded = await session.GetAsync<EmailTemplate>(template.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.True(htmlBody.Length > 10_000);
@@ -146,6 +149,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task EmailTemplate_UpdateContent_PersistsChangesAndKeepsKey()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var key = UniqueKey("tpl");
         var template = EmailTemplate.Create(key, "Original", null, "Subject", "<p>x</p>", null, true).Value;
 
@@ -153,18 +157,18 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(template);
-            await transaction.CommitAsync();
+            await session.SaveAsync(template, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         using (var transaction = session.BeginTransaction())
         {
             Assert.True(template.UpdateContent("Renamed", "Desc", "New subject", "<p>y</p>", "y").IsSuccess);
-            await transaction.CommitAsync();
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<EmailTemplate>(template.Id);
+        var loaded = await session.GetAsync<EmailTemplate>(template.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(key, loaded.Key);
@@ -179,6 +183,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task EmailTemplate_WithDuplicateKey_ViolatesUniqueIndexWithSqlState23505()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var key = UniqueKey("dup");
         var first = EmailTemplate.Create(key, "First", null, "Subject", "<p>x</p>", null, false).Value;
         var second = EmailTemplate.Create(key, "Second", null, "Subject", "<p>x</p>", null, false).Value;
@@ -186,15 +191,15 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
         using (var firstSession = postgres.SessionFactory.OpenSession())
         using (var firstTransaction = firstSession.BeginTransaction())
         {
-            await firstSession.SaveAsync(first);
-            await firstTransaction.CommitAsync();
+            await firstSession.SaveAsync(first, cancellationToken);
+            await firstTransaction.CommitAsync(cancellationToken);
         }
 
         using var secondSession = postgres.SessionFactory.OpenSession();
         using var secondTransaction = secondSession.BeginTransaction();
-        await secondSession.SaveAsync(second);
+        await secondSession.SaveAsync(second, cancellationToken);
 
-        var exception = await Assert.ThrowsAsync<GenericADOException>(() => secondTransaction.CommitAsync());
+        var exception = await Assert.ThrowsAsync<GenericADOException>(() => secondTransaction.CommitAsync(cancellationToken));
 
         var postgresException = FindPostgresException(exception);
         Assert.NotNull(postgresException);
@@ -205,6 +210,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task Notification_InsertAndLoad_RoundTripsAllPropertiesAndSetsAuditTimestamps()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var clock = new FakeTimeProvider(StartInstant);
         using var sessionFactory = postgres.BuildSessionFactory(clock);
         var appKey = UniqueKey("app")[..20];
@@ -224,12 +230,12 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(notification);
-            await transaction.CommitAsync();
+            await session.SaveAsync(notification, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<Notification>(notification.Id);
+        var loaded = await session.GetAsync<Notification>(notification.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(appKey, loaded.AppKey);
@@ -259,20 +265,21 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task Notification_StatusIsPersistedAsString()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var notification = QueueSimple(TimeProvider.System);
 
         using var session = postgres.SessionFactory.OpenSession();
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(notification);
-            await transaction.CommitAsync();
+            await session.SaveAsync(notification, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var rawStatus = await session
             .CreateSQLQuery("SELECT status FROM notifications WHERE id = :id")
             .SetGuid("id", notification.Id)
-            .UniqueResultAsync<string>();
+            .UniqueResultAsync<string>(cancellationToken);
 
         Assert.Equal("Pending", rawStatus);
     }
@@ -280,18 +287,19 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task Notification_WithNullOptionals_RoundTripsNulls()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var notification = QueueSimple(TimeProvider.System);
 
         using var session = postgres.SessionFactory.OpenSession();
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(notification);
-            await transaction.CommitAsync();
+            await session.SaveAsync(notification, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<Notification>(notification.Id);
+        var loaded = await session.GetAsync<Notification>(notification.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Null(loaded.ToName);
@@ -304,6 +312,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task Notification_WithLongBodies_RoundTripsThemIntact()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var htmlBody = "<p>" + string.Concat(Enumerable.Repeat("0123456789", 2000)) + "</p>";
         var textBody = string.Concat(Enumerable.Repeat("abcdefghij", 2000));
         var notification = QueueSimple(TimeProvider.System, htmlBody, textBody);
@@ -312,12 +321,12 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(notification);
-            await transaction.CommitAsync();
+            await session.SaveAsync(notification, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<Notification>(notification.Id);
+        var loaded = await session.GetAsync<Notification>(notification.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.True(htmlBody.Length > 10_000);
@@ -328,6 +337,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task Notification_StatusTransitions_PersistWithExactTimestampsAndAdvanceUpdatedAt()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var clock = new FakeTimeProvider(StartInstant);
         using var sessionFactory = postgres.BuildSessionFactory(clock);
         var notification = QueueSimple(clock);
@@ -336,8 +346,8 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(notification);
-            await transaction.CommitAsync();
+            await session.SaveAsync(notification, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var processingInstant = StartInstant.AddMinutes(10);
@@ -346,11 +356,11 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
         using (var transaction = session.BeginTransaction())
         {
             Assert.True(notification.MarkProcessing(clock.GetUtcNow().UtcDateTime).IsSuccess);
-            await transaction.CommitAsync();
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var processing = await session.GetAsync<Notification>(notification.Id);
+        var processing = await session.GetAsync<Notification>(notification.Id, cancellationToken);
         Assert.NotNull(processing);
         Assert.Equal(NotificationStatus.Processing, processing.Status);
         Assert.Equal(1, processing.Attempts);
@@ -366,11 +376,11 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
         using (var transaction = session.BeginTransaction())
         {
             Assert.True(processing.RegisterFailure("smtp down", clock.GetUtcNow().UtcDateTime).IsSuccess);
-            await transaction.CommitAsync();
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var retry = await session.GetAsync<Notification>(notification.Id);
+        var retry = await session.GetAsync<Notification>(notification.Id, cancellationToken);
         Assert.NotNull(retry);
         Assert.Equal(NotificationStatus.Pending, retry.Status);
         Assert.Equal(1, retry.Attempts);
@@ -387,11 +397,11 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
         {
             Assert.True(retry.MarkProcessing(clock.GetUtcNow().UtcDateTime).IsSuccess);
             Assert.True(retry.MarkSent(clock.GetUtcNow().UtcDateTime).IsSuccess);
-            await transaction.CommitAsync();
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var sent = await session.GetAsync<Notification>(notification.Id);
+        var sent = await session.GetAsync<Notification>(notification.Id, cancellationToken);
         Assert.NotNull(sent);
         Assert.Equal(NotificationStatus.Sent, sent.Status);
         Assert.Equal(2, sent.Attempts);
@@ -405,19 +415,20 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task Notification_ConcurrentMarkProcessing_SecondCommitFailsWithStaleStateAndAttemptsStayAtOne()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var notification = QueueSimple(TimeProvider.System);
 
         using (var setupSession = postgres.SessionFactory.OpenSession())
         using (var setupTransaction = setupSession.BeginTransaction())
         {
-            await setupSession.SaveAsync(notification);
-            await setupTransaction.CommitAsync();
+            await setupSession.SaveAsync(notification, cancellationToken);
+            await setupTransaction.CommitAsync(cancellationToken);
         }
 
         using var firstSession = postgres.SessionFactory.OpenSession();
         using var secondSession = postgres.SessionFactory.OpenSession();
-        var first = await firstSession.GetAsync<Notification>(notification.Id);
-        var second = await secondSession.GetAsync<Notification>(notification.Id);
+        var first = await firstSession.GetAsync<Notification>(notification.Id, cancellationToken);
+        var second = await secondSession.GetAsync<Notification>(notification.Id, cancellationToken);
         Assert.NotNull(first);
         Assert.NotNull(second);
 
@@ -426,19 +437,19 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
         using (var firstTransaction = firstSession.BeginTransaction())
         {
             Assert.True(first.MarkProcessing(now).IsSuccess);
-            await firstTransaction.CommitAsync();
+            await firstTransaction.CommitAsync(cancellationToken);
         }
 
         using var secondTransaction = secondSession.BeginTransaction();
         Assert.True(second.MarkProcessing(now).IsSuccess);
 
-        var exception = await Record.ExceptionAsync(() => secondTransaction.CommitAsync());
+        var exception = await Record.ExceptionAsync(() => secondTransaction.CommitAsync(cancellationToken));
 
         Assert.NotNull(exception);
         Assert.True(ContainsStaleObjectState(exception), exception.ToString());
 
         using var verifySession = postgres.SessionFactory.OpenSession();
-        var stored = await verifySession.GetAsync<Notification>(notification.Id);
+        var stored = await verifySession.GetAsync<Notification>(notification.Id, cancellationToken);
         Assert.NotNull(stored);
         Assert.Equal(1, stored.Attempts);
         Assert.Equal(2, stored.Version);
@@ -473,6 +484,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
     [Fact]
     public async Task Notification_WithBogusStatus_ViolatesCheckConstraintWithSqlState23514()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         using var session = postgres.SessionFactory.OpenSession();
         using var transaction = session.BeginTransaction();
 
@@ -483,7 +495,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
                 VALUES (:id, 'bogus-app', 'user@example.com', 'Subject', '<p>x</p>', 'Bogus', 3, now(), now(), now())
                 """)
             .SetGuid("id", Guid.CreateVersion7())
-            .ExecuteUpdateAsync());
+            .ExecuteUpdateAsync(cancellationToken));
 
         var postgresException = FindPostgresException(exception);
         Assert.NotNull(postgresException);

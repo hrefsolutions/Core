@@ -15,6 +15,7 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -22,11 +23,29 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Code rules (no inline comments, no U+2028/U+2029)
+        run: |
+          files=$(git ls-files 'src/*.cs' 'tests/*.cs')
+          inline=$(echo "$files" | xargs perl -ne 'next if /^\s*\/\/\/(?!\/)/; next if /^\s*\/\/ ReSharper /; print "$ARGV:$.: $_" if m{(^|[^:/"])//(?!/)}; close ARGV if eof')
+          separators=$(echo "$files" | xargs perl -CSD -ne 'print "$ARGV:$.\n" if /[\x{2028}\x{2029}]/; close ARGV if eof')
+          if [ -n "$inline" ]; then
+            echo "::error::Inline comments are not allowed (CLAUDE.md). Only /// XML docs and tool directives:"
+            echo "$inline"
+          fi
+          if [ -n "$separators" ]; then
+            echo "::error::Raw U+2028/U+2029 characters break C# compilation. Use \\U00002028 instead:"
+            echo "$separators"
+          fi
+          [ -z "$inline" ] && [ -z "$separators" ]
+
       - name: Restore
         run: dotnet restore Href.Core.sln
 
-      - name: Build (typecheck)
-        run: dotnet build Href.Core.sln --no-restore -c Release
+      - name: Build (typecheck, warnings as errors)
+        run: dotnet build Href.Core.sln --no-restore -c Release -warnaserror
 
       - name: Test
-        run: dotnet test Href.Core.sln --no-build -c Release
+        run: dotnet test Href.Core.sln --no-build -c Release --blame-hang-timeout 5m
+
+      - name: Docker image (same Dockerfile Railway builds)
+        run: docker build --tag href-core:ci .

@@ -45,6 +45,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ### Cambiado
 
+- CI: chequeo de reglas de código (sin comentarios en línea ni caracteres U+2028/U+2029), build con warnings como errores (`-warnaserror`), detección de tests colgados (`--blame-hang-timeout 5m`), timeout de 20 minutos y build de la imagen Docker que usa Railway.
+- Los tests pasan `TestContext.Current.CancellationToken` a las llamadas asíncronas (warnings xUnit1051) y no usan el literal `null` en `TheoryData<string?>` (warnings CS8625).
 - `AuditActions.NotificationEnqueued` (`NOTIFICATION_ENQUEUED`) pasa a llamarse `AuditActions.NotificationQueued` (`NOTIFICATION_QUEUED`). Aún no se registraba en producción.
 
 ## 0.1.1 - 2026-11-18

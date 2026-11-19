@@ -174,38 +174,39 @@ public sealed class DefaultEmailTemplatesIntegrationTests(PostgresFixture postgr
     [Fact]
     public async Task SeedScript_DoesNotOverwriteEditsWhenExecutedAgain()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         const string key = "welcome-user";
         const string editedName = "Edited by an administrator";
         var seedSql = ReadSeedScript();
 
         await using var connection = new NpgsqlConnection(postgres.ConnectionString);
-        await connection.OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await using (var update = new NpgsqlCommand("UPDATE email_templates SET name = @name WHERE key = @key", connection, transaction))
         {
             update.Parameters.AddWithValue("name", editedName);
             update.Parameters.AddWithValue("key", key);
-            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+            Assert.Equal(1, await update.ExecuteNonQueryAsync(cancellationToken));
         }
 
         await using (var seed = new NpgsqlCommand(seedSql, connection, transaction))
         {
-            await seed.ExecuteNonQueryAsync();
+            await seed.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await using (var select = new NpgsqlCommand("SELECT name FROM email_templates WHERE key = @key", connection, transaction))
         {
             select.Parameters.AddWithValue("key", key);
-            Assert.Equal(editedName, (string?)await select.ExecuteScalarAsync());
+            Assert.Equal(editedName, (string?)await select.ExecuteScalarAsync(cancellationToken));
         }
 
         await using (var count = new NpgsqlCommand("SELECT count(*) FROM email_templates WHERE key = ANY(@keys)", connection, transaction))
         {
             count.Parameters.AddWithValue("keys", DocumentedVariables.Keys.ToArray());
-            Assert.Equal((long)DocumentedVariables.Count, (long)(await count.ExecuteScalarAsync())!);
+            Assert.Equal((long)DocumentedVariables.Count, (long)(await count.ExecuteScalarAsync(cancellationToken))!);
         }
 
-        await transaction.RollbackAsync();
+        await transaction.RollbackAsync(cancellationToken);
     }
 }

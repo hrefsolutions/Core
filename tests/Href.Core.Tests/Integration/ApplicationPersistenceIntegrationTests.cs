@@ -10,6 +10,7 @@ public sealed class ApplicationPersistenceIntegrationTests(PostgresFixture postg
     [Fact]
     public async Task InsertAndLoad_RoundTripsAllPropertiesAndSetsAuditTimestamps()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = $"app-{Guid.NewGuid():N}"[..20];
         var (application, plainSecret) = Application.Create(
             appKey,
@@ -22,12 +23,12 @@ public sealed class ApplicationPersistenceIntegrationTests(PostgresFixture postg
 
         using (var transaction = session.BeginTransaction())
         {
-            await session.SaveAsync(application);
-            await transaction.CommitAsync();
+            await session.SaveAsync(application, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var loaded = await session.GetAsync<Application>(application.Id);
+        var loaded = await session.GetAsync<Application>(application.Id, cancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(appKey, loaded.AppKey);
@@ -46,6 +47,7 @@ public sealed class ApplicationPersistenceIntegrationTests(PostgresFixture postg
     [Fact]
     public async Task Insert_WithDuplicateAppKey_ThrowsGenericADOException()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = $"dup-{Guid.NewGuid():N}"[..20];
         var (first, _) = Application.Create(appKey, "First App", null, false, TimeProvider.System).Value;
         var (second, _) = Application.Create(appKey, "Second App", null, false, TimeProvider.System).Value;
@@ -53,14 +55,14 @@ public sealed class ApplicationPersistenceIntegrationTests(PostgresFixture postg
         using (var firstSession = postgres.SessionFactory.OpenSession())
         using (var firstTransaction = firstSession.BeginTransaction())
         {
-            await firstSession.SaveAsync(first);
-            await firstTransaction.CommitAsync();
+            await firstSession.SaveAsync(first, cancellationToken);
+            await firstTransaction.CommitAsync(cancellationToken);
         }
 
         using var secondSession = postgres.SessionFactory.OpenSession();
         using var secondTransaction = secondSession.BeginTransaction();
-        await secondSession.SaveAsync(second);
+        await secondSession.SaveAsync(second, cancellationToken);
 
-        await Assert.ThrowsAsync<GenericADOException>(() => secondTransaction.CommitAsync());
+        await Assert.ThrowsAsync<GenericADOException>(() => secondTransaction.CommitAsync(cancellationToken));
     }
 }
