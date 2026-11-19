@@ -57,6 +57,22 @@ Update this file in the same PR that changes any of the items below.
   - `email_templates` (`0003_create_notifications_and_email_templates.sql`, mapped by `EmailTemplateMapping`): `id`, `key` (unique index `ux_email_templates_key`), `name`, `description`, `subject`, `html_body` (`TEXT`), `text_body` (`TEXT`), `is_system`, `created_at_utc`, `updated_at_utc`.
   - `notifications` (`0003_create_notifications_and_email_templates.sql`, mapped by `NotificationMapping`): `id`, `app_key` (plain column, no FK), `to_email`, `to_name`, `subject`, `html_body` (`TEXT`), `text_body` (`TEXT`), `template_key`, `status` (`CHECK IN ('Pending', 'Processing', 'Sent', 'Failed')`), `attempts`, `max_attempts`, `version` (optimistic concurrency), `next_attempt_at_utc`, `processing_started_at_utc`, `sent_at_utc`, `last_error`, `notify_on_failure_to`, `correlation_id`, `created_at_utc`, `updated_at_utc`; indexes `ix_notifications_status_next_attempt_at_utc` (`status, next_attempt_at_utc`) and `ix_notifications_app_key_created_at_utc` (`app_key, created_at_utc DESC`).
   - `audit_logs` (`0002_create_audit_logs.sql`, mapped by `AuditLogMapping` with `Mutable(false)` and `JsonbType`): append-only table protected by trigger `audit_logs_block_mutation` (`BEFORE UPDATE OR DELETE`), with indexes on `occurred_at_utc DESC`, `(app_key, occurred_at_utc DESC)`, `correlation_id`, and `(entity_type, entity_id)`.
+  - Seed `0004_seed_default_email_templates.sql`: inserts the four default system templates into `email_templates` (see `## Email templates`).
+
+## Email templates
+
+Default templates (`is_system = true`, Spanish, simple responsive HTML with inline CSS and no external images, plus `TextBody`) loaded by migration `0004_seed_default_email_templates.sql` with `INSERT ... ON CONFLICT (key) DO NOTHING`. The HTML and text bodies of each template each use exactly the variables listed; the subject uses a subset of them.
+
+| Key | Purpose | Variables |
+|-----|---------|-----------|
+| `welcome-user` | Welcome email after an account is created. | `UserName`, `AppName` |
+| `verify-email` | Link to verify the email address of an account. | `UserName`, `AppName`, `VerificationUrl`, `ExpiresInHours` |
+| `reset-password` | Link to reset the password of an account. | `UserName`, `AppName`, `ResetUrl`, `ExpiresInMinutes` |
+| `delivery-failed-alert` | Internal operational alert to the application owner when a notification exhausts its retries. | `OriginalTo`, `OriginalSubject`, `NotificationId`, `Attempts`, `LastError` |
+
+- `VerificationUrl` and `ResetUrl` are placed as the full quoted `href` value (and shown as text); the caller must validate them before rendering.
+- A migration runs once, so edits made later (for example through the template administration) are never overwritten. Changing a default template means a new migration with an `UPDATE`; the seed never overwrites edits.
+- Multi-language templates are out of scope.
 
 ## Environment variables
 
