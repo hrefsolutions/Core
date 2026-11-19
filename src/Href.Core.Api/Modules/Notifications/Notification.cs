@@ -14,6 +14,8 @@ namespace Href.Core.Api.Modules.Notifications;
 /// The recovery (<c>RecoverStuck</c>) does not touch <c>attempts</c>, sets
 /// <c>status = CASE WHEN attempts &gt;= max_attempts THEN 'Failed' ELSE 'Pending' END</c> and
 /// <c>processing_started_at_utc = NULL</c>.
+/// A claimed notification whose send never started or was cancelled by a shutdown is returned with
+/// <c>ReleaseUnsent</c>, which gives the attempt back (<c>Attempts - 1</c>) and makes it <c>Pending</c> again.
 /// </summary>
 public class Notification : Entity, IAuditableEntity
 {
@@ -25,6 +27,11 @@ public class Notification : Entity, IAuditableEntity
     public const int TemplateKeyMaxLength = 100;
     public const int CorrelationIdMaxLength = 64;
     public const int LastErrorMaxLength = 2000;
+
+    /// <summary>
+    /// <c>LastError</c> set by <see cref="RecoverStuck"/> when a stuck notification has no attempts left.
+    /// </summary>
+    public const string ProcessingTimedOutError = "Processing timed out";
 
     private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5)];
 
@@ -253,13 +260,35 @@ public class Notification : Entity, IAuditableEntity
         if (Attempts >= MaxAttempts)
         {
             Status = NotificationStatus.Failed;
-            LastError = TruncateError("Processing timed out");
+            LastError = TruncateError(ProcessingTimedOutError);
         }
         else
         {
             Status = NotificationStatus.Pending;
             NextAttemptAtUtc = utcNow;
         }
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Returns a claimed notification that was never sent (the worker stopped before or during the send) to
+    /// <c>Pending</c>, ready to be claimed immediately. The claim counted an attempt that did not happen, so
+    /// <c>Attempts</c> goes back by one (never below zero). <c>LastError</c> is kept.
+    /// </summary>
+    public virtual Result ReleaseUnsent(DateTime utcNow)
+    {
+        EnsureUtc(utcNow);
+
+        if (Status != NotificationStatus.Processing)
+        {
+            return NotificationErrors.InvalidTransition;
+        }
+
+        Attempts = Math.Max(0, Attempts - 1);
+        Status = NotificationStatus.Pending;
+        NextAttemptAtUtc = utcNow;
+        ProcessingStartedAtUtc = null;
 
         return Result.Success();
     }

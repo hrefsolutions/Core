@@ -516,6 +516,99 @@ public sealed class NotificationTests
     }
 
     [Fact]
+    public void ReleaseUnsent_FromProcessing_ReturnsToPendingAndGivesTheAttemptBack()
+    {
+        var notification = NewProcessing();
+        var now = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(30);
+
+        var result = notification.ReleaseUnsent(now);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(NotificationStatus.Pending, notification.Status);
+        Assert.Equal(0, notification.Attempts);
+        Assert.Equal(now, notification.NextAttemptAtUtc);
+        Assert.Null(notification.ProcessingStartedAtUtc);
+        Assert.Null(notification.LastError);
+    }
+
+    [Fact]
+    public void ReleaseUnsent_OnTheLastAttempt_KeepsLastErrorAndAllowsTheLastClaimAgain()
+    {
+        var notification = QueueValid().Value;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        for (var attempt = 1; attempt < Notification.DefaultMaxAttempts; attempt++)
+        {
+            Assert.True(notification.MarkProcessing(now).IsSuccess);
+            Assert.True(notification.RegisterFailure("smtp down", now).IsSuccess);
+        }
+
+        Assert.True(notification.MarkProcessing(now).IsSuccess);
+        Assert.Equal(3, notification.Attempts);
+
+        Assert.True(notification.ReleaseUnsent(now).IsSuccess);
+
+        Assert.Equal(NotificationStatus.Pending, notification.Status);
+        Assert.Equal(2, notification.Attempts);
+        Assert.Equal("smtp down", notification.LastError);
+        Assert.True(notification.MarkProcessing(now).IsSuccess);
+        Assert.Equal(3, notification.Attempts);
+    }
+
+    [Fact]
+    public void ReleaseUnsent_NeverTakesAttemptsBelowZero()
+    {
+        var notification = NewProcessing();
+        typeof(Notification).GetProperty(nameof(Notification.Attempts))!.SetValue(notification, 0);
+
+        Assert.True(notification.ReleaseUnsent(_timeProvider.GetUtcNow().UtcDateTime).IsSuccess);
+
+        Assert.Equal(0, notification.Attempts);
+        Assert.Equal(NotificationStatus.Pending, notification.Status);
+    }
+
+    [Fact]
+    public void ReleaseUnsent_FromPending_IsRejectedAndKeepsState()
+    {
+        var notification = QueueValid().Value;
+        var before = Snapshot(notification);
+
+        AssertRejected(notification.ReleaseUnsent(_timeProvider.GetUtcNow().UtcDateTime));
+        Assert.Equal(before, Snapshot(notification));
+    }
+
+    [Fact]
+    public void ReleaseUnsent_FromSent_IsRejectedAndKeepsState()
+    {
+        var notification = NewSent();
+        var before = Snapshot(notification);
+
+        AssertRejected(notification.ReleaseUnsent(_timeProvider.GetUtcNow().UtcDateTime));
+        Assert.Equal(before, Snapshot(notification));
+    }
+
+    [Fact]
+    public void ReleaseUnsent_FromFailed_IsRejectedAndKeepsState()
+    {
+        var notification = NewFailed();
+        var before = Snapshot(notification);
+
+        AssertRejected(notification.ReleaseUnsent(_timeProvider.GetUtcNow().UtcDateTime));
+        Assert.Equal(before, Snapshot(notification));
+    }
+
+    [Fact]
+    public void ReleaseUnsent_WithNonUtcKind_ThrowsArgumentException()
+    {
+        var notification = NewProcessing();
+
+        Assert.Throws<ArgumentException>(() => notification.ReleaseUnsent(new DateTime(2026, 11, 18, 12, 0, 0, DateTimeKind.Local)));
+        Assert.Throws<ArgumentException>(() => notification.ReleaseUnsent(new DateTime(2026, 11, 18, 12, 0, 0, DateTimeKind.Unspecified)));
+        Assert.Equal(NotificationStatus.Processing, notification.Status);
+        Assert.Equal(1, notification.Attempts);
+    }
+
+    [Fact]
     public void Transitions_WithNonUtcKind_ThrowArgumentException()
     {
         var local = new DateTime(2026, 11, 18, 12, 0, 0, DateTimeKind.Local);

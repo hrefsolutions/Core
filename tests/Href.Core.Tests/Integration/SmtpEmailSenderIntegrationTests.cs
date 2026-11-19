@@ -77,7 +77,7 @@ public sealed class SmtpEmailSenderIntegrationTests(MailpitFixture mailpit)
         {
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
             var acceptTask = listener.AcceptTcpClientAsync(TestContext.Current.CancellationToken).AsTask();
-            var sender = CreateSender("localhost", port, timeoutSeconds: 1);
+            var sender = CreateSender(IPAddress.Loopback.ToString(), port, timeoutSeconds: 1);
             var stopwatch = Stopwatch.StartNew();
 
             await Assert.ThrowsAnyAsync<Exception>(() => sender.SendAsync(
@@ -85,7 +85,7 @@ public sealed class SmtpEmailSenderIntegrationTests(MailpitFixture mailpit)
                 TestContext.Current.CancellationToken));
 
             stopwatch.Stop();
-            accepted = await acceptTask;
+            accepted = await acceptTask.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10), $"SendAsync took {stopwatch.Elapsed}");
         }
         finally
