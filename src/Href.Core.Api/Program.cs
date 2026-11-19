@@ -46,6 +46,7 @@ try
     builder.Services.AddScoped<DatabaseHealthService>();
     builder.Services.AddScoped<ApplicationService>();
     builder.Services.AddScoped<NotificationService>();
+    builder.Services.AddScoped<EmailTemplateService>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
     builder.Services.AddSmtpEmail(builder.Configuration);

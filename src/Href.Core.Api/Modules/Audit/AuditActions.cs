@@ -16,4 +16,5 @@ public static class AuditActions
     public const string NotificationQueued = "NOTIFICATION_QUEUED";
     public const string TemplateCreated = "TEMPLATE_CREATED";
     public const string TemplateUpdated = "TEMPLATE_UPDATED";
+    public const string TemplateDeleted = "TEMPLATE_DELETED";
 }

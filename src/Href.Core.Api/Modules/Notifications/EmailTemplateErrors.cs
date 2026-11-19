@@ -32,6 +32,39 @@ public static class EmailTemplateErrors
         "Templates.InvalidTextBody",
         "The template text body cannot contain NUL characters.");
 
+    public static readonly Error ContentTooLarge = Error.Validation(
+        "Templates.ContentTooLarge",
+        "The template HTML body and text body cannot exceed 524288 characters each.");
+
+    public static readonly Error KeyTaken = Error.Conflict(
+        "Templates.KeyTaken",
+        "An email template with the specified key already exists.");
+
+    public static readonly Error SystemTemplate = Error.Conflict(
+        "Templates.SystemTemplate",
+        "System templates cannot be deleted.");
+
+    /// <summary>
+    /// Builds the error for a system template update that dropped placeholders the Core flows provide a value for.
+    /// </summary>
+    public static Error MissingRequiredPlaceholders(IEnumerable<string> keys) => Error.Validation(
+        "Templates.MissingRequiredPlaceholders",
+        $"The system template must keep these placeholders: {string.Join(", ", keys)}");
+
+    /// <summary>
+    /// Builds the error for a system template whose new content cannot be rendered with the worst-case values the Core flows provide.
+    /// </summary>
+    public static Error SystemTemplateNotRenderable(string reason) => Error.Validation(
+        "Templates.SystemTemplateNotRenderable",
+        $"The system template cannot be rendered with the largest values the Core provides: {reason}");
+
+    /// <summary>
+    /// Builds the error for a system template update that added placeholders the Core flows never provide.
+    /// </summary>
+    public static Error UnknownPlaceholders(IEnumerable<string> keys) => Error.Validation(
+        "Templates.UnknownPlaceholders",
+        $"The system template cannot use these placeholders: {string.Join(", ", keys)}");
+
     /// <summary>
     /// Builds the error for a rendered part that exceeds its length limit.
     /// </summary>
