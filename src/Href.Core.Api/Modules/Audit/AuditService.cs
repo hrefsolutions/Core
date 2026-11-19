@@ -94,7 +94,10 @@ public sealed class AuditService(
         return string.IsNullOrWhiteSpace(headerValue) ? null : headerValue;
     }
 
-    private static string? SerializeSnapshot(object? snapshot) =>
+    /// <summary>
+    /// Serializes an audit snapshot the way it is stored in <c>old_values</c> / <c>new_values</c> (web defaults: camelCase).
+    /// </summary>
+    internal static string? SerializeSnapshot(object? snapshot) =>
         snapshot switch
         {
             null => null,
