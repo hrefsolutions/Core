@@ -28,6 +28,17 @@ Requirements: .NET 10 SDK (pinned by `global.json`) and Docker.
 
 Mailpit UI: <http://localhost:8025> (SMTP on `localhost:1025`).
 
+### Email
+
+The API sends email through SMTP (`IEmailSender`, MailKit) and does not start without a valid `Smtp` configuration (see `SYSTEM_MAP.md`).
+
+- **Local:** `appsettings.Development.json` points to Mailpit (`localhost:1025`, no TLS, no credentials). Every email the API sends shows up in <http://localhost:8025>. The `api` container of `docker-compose.yml` also uses the `mailpit` service.
+- **Production (Railway):** SMTP requires a Railway Pro plan or higher (Free, Trial and Hobby block it); redeploy after upgrading. `appsettings.json` already has `smtp.gmail.com`, port `465`, `SslOnConnect` and the `href.notifier@gmail.com` sender. Manual steps:
+  1. On the `href.notifier@gmail.com` Google account turn on 2-Step Verification and create an App Password (never use the account password).
+  2. In Railway set `Smtp__Username=href.notifier@gmail.com` and `Smtp__Password=<App Password>`. The password lives only in Railway: never commit it or put it in `.env.example`.
+  3. Alternative for port `587`: `Smtp__Port=587` and `Smtp__SecureSocket=StartTls`.
+- Gmail allows about 500 recipients per day.
+
 ### Keep the API running while you code
 
 `dotnet watch` keeps the API up on `http://localhost:8080` and applies every saved change (Hot Reload), so there is no need to press F5 after each edit:

@@ -9,11 +9,16 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _connectionString;
     private readonly bool _migrateOnStartup;
+    private readonly IReadOnlyDictionary<string, string?> _overrides;
 
-    public ApiFactory(string connectionString, bool migrateOnStartup = false)
+    public ApiFactory(
+        string connectionString,
+        bool migrateOnStartup = false,
+        IReadOnlyDictionary<string, string?>? overrides = null)
     {
         _connectionString = connectionString;
         _migrateOnStartup = migrateOnStartup;
+        _overrides = overrides ?? new Dictionary<string, string?>();
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", connectionString);
     }
 
@@ -25,7 +30,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             {
                 ["ConnectionStrings:DefaultConnection"] = _connectionString,
                 [DatabaseMigrator.MigrateOnStartupKey] = _migrateOnStartup ? "true" : "false",
+                ["Smtp:Host"] = "localhost",
+                ["Smtp:Port"] = "1025",
+                ["Smtp:SecureSocket"] = "None",
+                ["Smtp:Username"] = null,
+                ["Smtp:Password"] = null,
+                ["Smtp:FromEmail"] = "notifier@example.test",
+                ["Smtp:FromName"] = "Href Tests",
             });
+            configurationBuilder.AddInMemoryCollection(_overrides);
         });
     }
 }
