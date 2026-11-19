@@ -37,6 +37,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                 ["Smtp:Password"] = null,
                 ["Smtp:FromEmail"] = "notifier@example.test",
                 ["Smtp:FromName"] = "Href Tests",
+                ["Notifications:Worker:Enabled"] = "false",
             });
             configurationBuilder.AddInMemoryCollection(_overrides);
         });

@@ -38,6 +38,7 @@ The API sends email through SMTP (`IEmailSender`, MailKit) and does not start wi
   2. In Railway set `Smtp__Username=href.notifier@gmail.com` and `Smtp__Password=<App Password>`. The password lives only in Railway: never commit it or put it in `.env.example`.
   3. Alternative for port `587`: `Smtp__Port=587` and `Smtp__SecureSocket=StartTls`.
 - Gmail allows about 500 recipients per day.
+- **Delivery is asynchronous:** the API only queues notifications in the `notifications` table, and a background worker sends them (every 5 seconds by default, up to 3 attempts). Locally, with the API and Mailpit running, a queued notification shows up in the Mailpit UI (<http://localhost:8025>) within a few seconds. Set `Notifications__Worker__Enabled=false` to stop delivery. Details in `SYSTEM_MAP.md` (`## Background processing`).
 
 ### Keep the API running while you code
 
