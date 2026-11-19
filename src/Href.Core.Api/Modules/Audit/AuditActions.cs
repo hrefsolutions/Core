@@ -13,7 +13,7 @@ public static class AuditActions
     public const string RoleUpdated = "ROLE_UPDATED";
     public const string PermissionAssigned = "PERMISSION_ASSIGNED";
     public const string LoginFailed = "LOGIN_FAILED";
-    public const string NotificationEnqueued = "NOTIFICATION_ENQUEUED";
+    public const string NotificationQueued = "NOTIFICATION_QUEUED";
     public const string TemplateCreated = "TEMPLATE_CREATED";
     public const string TemplateUpdated = "TEMPLATE_UPDATED";
 }

@@ -4,6 +4,10 @@ namespace Href.Core.Api.Modules.Notifications;
 
 public static class EmailTemplateErrors
 {
+    public static readonly Error NotFound = Error.NotFound(
+        "Templates.NotFound",
+        "The requested email template was not found.");
+
     public static readonly Error InvalidKey = Error.Validation(
         "Templates.InvalidKey",
         "The template key must be a lowercase slug (3 to 100 characters, letters, digits and hyphens).");

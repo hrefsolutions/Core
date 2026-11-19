@@ -22,7 +22,7 @@ public static class NotificationErrors
 
     public static readonly Error InvalidContent = Error.Validation(
         "Notifications.InvalidContent",
-        "The HTML body is required and the bodies cannot contain NUL characters.");
+        "Provide either a templateKey (with optional variables) or an html body with a subject, never both; the bodies cannot contain NUL characters.");
 
     public static readonly Error InvalidTemplateKey = Error.Validation(
         "Notifications.InvalidTemplateKey",
@@ -35,6 +35,30 @@ public static class NotificationErrors
     public static readonly Error InvalidCorrelationId = Error.Validation(
         "Notifications.InvalidCorrelationId",
         "The correlation ID cannot exceed 64 characters.");
+
+    public static readonly Error ContentTooLarge = Error.Validation(
+        "Notifications.ContentTooLarge",
+        "The HTML body and the text body of an email cannot exceed 512 KB (524288 bytes) each, measured as UTF-8.");
+
+    public static readonly Error InvalidStatus = Error.Validation(
+        "Notifications.InvalidStatus",
+        "The status must be one of 'Pending', 'Processing', 'Sent' or 'Failed'.");
+
+    public static readonly Error InvalidDateRange = Error.Validation(
+        "Notifications.InvalidDateRange",
+        "The 'from' date cannot be later than the 'to' date.");
+
+    public static readonly Error InvalidPage = Error.Validation(
+        "Notifications.InvalidPage",
+        "The page must be 1 or greater.");
+
+    public static readonly Error InvalidPageSize = Error.Validation(
+        "Notifications.InvalidPageSize",
+        "The page size must be between 1 and 200.");
+
+    public static readonly Error NotFound = Error.NotFound(
+        "Notifications.NotFound",
+        "The requested notification was not found.");
 
     public static readonly Error InvalidTransition = Error.Conflict(
         "Notifications.InvalidTransition",
