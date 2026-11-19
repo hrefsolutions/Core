@@ -40,6 +40,7 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 - Auditoría inmutable (`IAuditService`, `AuditLog`):
   - `RecordAsync` se invoca dentro de la misma transacción e `ISession` del cambio de negocio.
   - En `OldValues` y `NewValues` se pasan objetos/records de snapshot (serializados como `jsonb` en camelCase), nunca entidades de NHibernate directas, y **nunca** secretos, contraseñas ni hashes.
+  - Usuarios, roles, permisos y accesos: toda escritura de estos módulos registra su acción de `AuditActions` en la misma transacción, con los helpers `RecordUserChangeAsync` (`Modules/Users/UserAuditing`) y `RecordRoleChangeAsync` / `RecordPermissionChangeAsync` / `RecordAccessChangeAsync` (`Modules/Authorization/AuthorizationAuditing`) y los snapshots `UserAuditSnapshot`, `RoleAuditSnapshot`, `PermissionAuditSnapshot` y `AccessAuditSnapshot` (tomar el `before` antes de modificar la entidad). En roles, permisos y accesos el `app_key` es el de la aplicación afectada.
 
 ## Ramas
 
