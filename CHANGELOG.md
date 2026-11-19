@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.2.0 - 2026-11-19
+
 ### Agregado
 
 - Entidades `EmailTemplate` y `Notification` (`Modules/Notifications/`) con sus mappings NHibernate y la migración `0003_create_notifications_and_email_templates.sql` (tablas `email_templates` y `notifications`, índice único `ux_email_templates_key` e índices `ix_notifications_status_next_attempt_at_utc` e `ix_notifications_app_key_created_at_utc`). Los cuerpos `html_body` y `text_body` son `TEXT`.
