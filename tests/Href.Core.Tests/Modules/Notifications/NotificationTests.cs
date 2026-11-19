@@ -10,7 +10,7 @@ public sealed class NotificationTests
 
     public static TheoryData<string?> InvalidAppKeys => new()
     {
-        null,
+        null!,
         string.Empty,
         "   ",
         new string('a', 51),
@@ -21,7 +21,7 @@ public sealed class NotificationTests
 
     public static TheoryData<string?> InvalidEmails => new()
     {
-        null,
+        null!,
         string.Empty,
         "   ",
         "not-an-email",
@@ -760,6 +760,34 @@ public sealed class NotificationTests
 
         Assert.Equal(before, Snapshot(notification));
         Assert.Equal(NotificationStatus.Failed, notification.Status);
+    }
+
+    [Fact]
+    public void Queue_WithBodiesAtTheMaximumLength_Succeeds()
+    {
+        var body = new string('a', Notification.BodyMaxLength);
+
+        var result = QueueValid(htmlBody: body, textBody: body);
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public void Queue_WithHtmlBodyOverTheMaximumLength_ReturnsContentTooLargeError()
+    {
+        var result = QueueValid(htmlBody: new string('a', Notification.BodyMaxLength + 1));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(NotificationErrors.ContentTooLarge, result.Error);
+    }
+
+    [Fact]
+    public void Queue_WithTextBodyOverTheMaximumLength_ReturnsContentTooLargeError()
+    {
+        var result = QueueValid(textBody: new string('a', Notification.BodyMaxLength + 1));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(NotificationErrors.ContentTooLarge, result.Error);
     }
 
     private static void AssertRejected(Result result)
