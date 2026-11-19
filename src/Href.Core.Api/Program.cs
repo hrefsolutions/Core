@@ -3,6 +3,8 @@ using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
 using Href.Core.Api.Modules.Notifications;
+using Href.Core.Api.Modules.Notifications.Email;
+using Href.Core.Api.Modules.Notifications.Worker;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
@@ -45,6 +47,8 @@ try
     builder.Services.AddScoped<ApplicationService>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
+    builder.Services.AddSmtpEmail(builder.Configuration);
+    builder.Services.AddNotificationWorker(builder.Configuration);
     builder.Services
         .AddAuthentication()
         .AddScheme<AuthenticationSchemeOptions, AppKeyAuthenticationHandler>(

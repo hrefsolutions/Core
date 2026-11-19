@@ -31,11 +31,16 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=href_core;Username=href;Password=href
+      Smtp__Host: mailpit
+      Smtp__Port: "1025"
+      Smtp__SecureSocket: None
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
 volumes:
   postgres-data:

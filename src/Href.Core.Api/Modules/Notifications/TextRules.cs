@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Mail;
 
 namespace Href.Core.Api.Modules.Notifications;
 
@@ -19,4 +20,11 @@ internal static class TextRules
     }
 
     public static bool HasNul(string? value) => value is not null && value.Contains('\0');
+
+    public static bool IsSingleEmailAddress(string value, int maxLength) =>
+        value.Length > 0
+        && value.Length <= maxLength
+        && !HasControlOrLineSeparator(value)
+        && MailAddress.TryCreate(value, out var parsed)
+        && string.Equals(parsed.Address, value, StringComparison.Ordinal);
 }
