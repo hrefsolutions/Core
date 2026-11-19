@@ -14,6 +14,7 @@ public partial class EmailTemplate : Entity, IAuditableEntity
     public const int NameMaxLength = 100;
     public const int DescriptionMaxLength = 500;
     public const int SubjectMaxLength = 500;
+    public const int BodyMaxLength = TemplateRenderer.MaxRenderedBodyLength;
 
     protected EmailTemplate()
     {
@@ -36,6 +37,25 @@ public partial class EmailTemplate : Entity, IAuditableEntity
     public virtual DateTime CreatedAtUtc { get; protected set; }
 
     public virtual DateTime UpdatedAtUtc { get; protected set; }
+
+    /// <summary>
+    /// Returns whether <paramref name="key"/> is a valid template key (exact lowercase slug, no trimming).
+    /// </summary>
+    public static bool IsValidKey(string? key) =>
+        key is not null
+        && key.Length is >= KeyMinLength and <= KeyMaxLength
+        && KeyRegex().IsMatch(key);
+
+    /// <summary>
+    /// Validates template content without changing any entity. It applies the same rules as <see cref="UpdateContent"/>.
+    /// </summary>
+    public static Result ValidateContent(
+        string? name,
+        string? description,
+        string? subject,
+        string? htmlBody,
+        string? textBody) =>
+        ValidateContent(name, description, subject, htmlBody, textBody, out _);
 
     public static Result<EmailTemplate> Create(
         string? key,
@@ -139,6 +159,11 @@ public partial class EmailTemplate : Entity, IAuditableEntity
             return EmailTemplateErrors.InvalidTextBody;
         }
 
+        if (htmlBody.Length > BodyMaxLength || textBody?.Length > BodyMaxLength)
+        {
+            return EmailTemplateErrors.ContentTooLarge;
+        }
+
         content = new Content(
             normalizedName,
             normalizedDescription,
@@ -149,7 +174,7 @@ public partial class EmailTemplate : Entity, IAuditableEntity
         return Result.Success();
     }
 
-    [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$")]
+    [GeneratedRegex(@"\A[a-z0-9]+(-[a-z0-9]+)*\z")]
     private static partial Regex KeyRegex();
 
     private readonly record struct Content(

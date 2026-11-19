@@ -29,6 +29,11 @@ public class Notification : Entity, IAuditableEntity
     public const int LastErrorMaxLength = 2000;
 
     /// <summary>
+    /// Maximum length, in characters, of the HTML body and of the text body.
+    /// </summary>
+    public const int BodyMaxLength = TemplateRenderer.MaxRenderedBodyLength;
+
+    /// <summary>
     /// <c>LastError</c> set by <see cref="RecoverStuck"/> when a stuck notification has no attempts left.
     /// </summary>
     public const string ProcessingTimedOutError = "Processing timed out";
@@ -126,6 +131,11 @@ public class Notification : Entity, IAuditableEntity
         if (string.IsNullOrWhiteSpace(htmlBody) || TextRules.HasNul(htmlBody) || TextRules.HasNul(textBody))
         {
             return NotificationErrors.InvalidContent;
+        }
+
+        if (htmlBody.Length > BodyMaxLength || textBody?.Length > BodyMaxLength)
+        {
+            return NotificationErrors.ContentTooLarge;
         }
 
         var normalizedTemplateKey = string.IsNullOrWhiteSpace(templateKey) ? null : templateKey.Trim();

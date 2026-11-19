@@ -234,4 +234,49 @@ public sealed class EmailTemplateTests
         Assert.Equal("<p>Hello {{Name}}</p>", template.HtmlBody);
         Assert.Equal("Hello {{Name}}", template.TextBody);
     }
+
+    [Theory]
+    [InlineData("welcome-user", true)]
+    [InlineData("abc", true)]
+    [InlineData("ab", false)]
+    [InlineData("Welcome-User", false)]
+    [InlineData("welcome_user", false)]
+    [InlineData(" welcome-user", false)]
+    [InlineData("welcome-user\n", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsValidKey_AcceptsOnlyExactLowercaseSlugs(string? key, bool expected)
+    {
+        Assert.Equal(expected, EmailTemplate.IsValidKey(key));
+    }
+
+    [Fact]
+    public void IsValidKey_RejectsKeysOverTheMaximumLength()
+    {
+        Assert.True(EmailTemplate.IsValidKey(new string('a', EmailTemplate.KeyMaxLength)));
+        Assert.False(EmailTemplate.IsValidKey(new string('a', EmailTemplate.KeyMaxLength + 1)));
+    }
+
+    [Fact]
+    public void Create_AndUpdateContent_RejectBodiesOverTheMaximumLength()
+    {
+        var atLimit = new string('a', EmailTemplate.BodyMaxLength);
+        var overLimit = new string('a', EmailTemplate.BodyMaxLength + 1);
+        var template = CreateValid(htmlBody: atLimit, textBody: atLimit, isSystem: false).Value;
+
+        Assert.Equal(EmailTemplateErrors.ContentTooLarge, CreateValid(htmlBody: overLimit).Error);
+        Assert.Equal(EmailTemplateErrors.ContentTooLarge, CreateValid(textBody: overLimit).Error);
+        Assert.Equal(EmailTemplateErrors.ContentTooLarge, template.UpdateContent("N", null, "S", overLimit, null).Error);
+        Assert.Equal(EmailTemplateErrors.ContentTooLarge, template.UpdateContent("N", null, "S", "<p>x</p>", overLimit).Error);
+        Assert.Equal(atLimit, template.HtmlBody);
+    }
+
+    [Fact]
+    public void ValidateContent_AppliesTheUpdateRulesWithoutChangingAnything()
+    {
+        Assert.True(EmailTemplate.ValidateContent("N", null, "S", "<p>x</p>", null).IsSuccess);
+        Assert.Equal(EmailTemplateErrors.InvalidName, EmailTemplate.ValidateContent("  ", null, "S", "<p>x</p>", null).Error);
+        Assert.Equal(EmailTemplateErrors.InvalidSubject, EmailTemplate.ValidateContent("N", null, "S\nT", "<p>x</p>", null).Error);
+        Assert.Equal(EmailTemplateErrors.InvalidHtmlBody, EmailTemplate.ValidateContent("N", null, "S", " ", null).Error);
+    }
 }

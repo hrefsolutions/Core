@@ -92,7 +92,7 @@ public sealed class AuditLogIntegrationTests(PostgresFixture postgres)
         using (var transaction = session.BeginTransaction())
         {
             appLog = await appAudit.RecordAsync(
-                new AuditEntry(AuditActions.NotificationEnqueued),
+                new AuditEntry(AuditActions.NotificationQueued),
                 TestContext.Current.CancellationToken);
             anonLog = await anonAudit.RecordAsync(
                 new AuditEntry(AuditActions.LoginFailed),
