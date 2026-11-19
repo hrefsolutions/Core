@@ -27,4 +27,25 @@ public static class EmailTemplateErrors
     public static readonly Error InvalidTextBody = Error.Validation(
         "Templates.InvalidTextBody",
         "The template text body cannot contain NUL characters.");
+
+    /// <summary>
+    /// Builds the error for a rendered part that exceeds its length limit.
+    /// </summary>
+    public static Error RenderedContentTooLarge(string part, int maxLength) => Error.Validation(
+        "Templates.RenderedContentTooLarge",
+        $"Rendered {part} exceeds {maxLength} characters.");
+
+    /// <summary>
+    /// Builds the error for variable keys that differ only by case.
+    /// </summary>
+    public static Error DuplicateVariables(IEnumerable<string> keys) => Error.Validation(
+        "Templates.DuplicateVariables",
+        $"Duplicate variables (case-insensitive): {string.Join(", ", keys)}");
+
+    /// <summary>
+    /// Builds the error for placeholders without a value, listing every missing key.
+    /// </summary>
+    public static Error MissingVariables(IEnumerable<string> keys) => Error.Validation(
+        "Templates.MissingVariables",
+        $"Missing variables: {string.Join(", ", keys)}");
 }
