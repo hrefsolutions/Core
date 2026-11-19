@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <PackageReference Include="dbup-postgresql" Version="7.0.1" />
+    <PackageReference Include="MailKit" Version="5.0.0" />
     <PackageReference Include="NHibernate" Version="5.7.1" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />

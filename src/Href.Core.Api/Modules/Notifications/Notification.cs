@@ -283,9 +283,5 @@ public class Notification : Entity, IAuditableEntity
         return value[..length];
     }
 
-    private static bool IsSingleEmailAddress(string value) =>
-        value.Length is > 0 and <= EmailMaxLength
-        && !TextRules.HasControlOrLineSeparator(value)
-        && MailAddress.TryCreate(value, out var parsed)
-        && string.Equals(parsed.Address, value, StringComparison.Ordinal);
+    private static bool IsSingleEmailAddress(string value) => TextRules.IsSingleEmailAddress(value, EmailMaxLength);
 }
