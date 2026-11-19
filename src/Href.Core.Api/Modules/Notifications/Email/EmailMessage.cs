@@ -1,3 +1,5 @@
+using Href.Core.Api.Common.Domain;
+
 namespace Href.Core.Api.Modules.Notifications.Email;
 
 /// <summary>

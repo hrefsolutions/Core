@@ -5,8 +5,10 @@ using Href.Core.Api.Modules.Audit;
 using Href.Core.Api.Modules.Notifications;
 using Href.Core.Api.Modules.Notifications.Email;
 using Href.Core.Api.Modules.Notifications.Worker;
+using Href.Core.Api.Modules.Users;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Identity;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -49,6 +51,7 @@ try
     builder.Services.AddScoped<EmailTemplateService>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
+    builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
     builder.Services.AddSmtpEmail(builder.Configuration);
     builder.Services.AddNotificationWorker(builder.Configuration);
     builder.Services

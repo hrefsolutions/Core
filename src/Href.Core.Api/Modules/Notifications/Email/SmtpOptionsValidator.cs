@@ -1,3 +1,4 @@
+using Href.Core.Api.Common.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Href.Core.Api.Modules.Notifications.Email;
