@@ -4,6 +4,17 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Agregado
+
+- Entidad global `User` (`Modules/Users/`) con su mapping NHibernate y la migración `0005_create_users.sql` (tabla `users`, índice único `ux_users_email`, `CHECK` de `status` y `ck_users_lock_state`, que exige `locked_at_utc` solo cuando el usuario está `Locked`). El email se guarda sin espacios y en minúsculas, así que un email repetido con otras mayúsculas lo rechaza el índice único. Nombre completo de 1 a 150 caracteres en una sola línea. Métodos de dominio `Create`, `SetPassword`, `VerifyPassword`, `UpdateProfile`, `ChangeEmail` (un email distinto borra la verificación), `MarkEmailVerified`, `Lock`, `Unlock` y `RegisterLogin`, con errores `Users.*`.
+- Hash de contraseñas con `PasswordHasher<User>` de ASP.NET Core Identity (PBKDF2-HMAC-SHA512, formato versionado), registrado como `IPasswordHasher<User>` singleton. Si al verificar el hash usa parámetros viejos, se reemplaza por uno nuevo de la misma contraseña.
+- `PasswordPolicy` (NIST SP 800-63B): de 10 a 128 caracteres contados como code points, no solo espacios, sin `NUL` y sin reglas de composición. Error `Users.WeakPassword`.
+- `SecurityStamp` en `User`: se regenera al cambiar la contraseña, al cambiar el email por uno distinto, al bloquear y al desbloquear, para poder invalidar los tokens emitidos antes.
+
+### Cambiado
+
+- `TextRules` pasa de `Modules/Notifications/` a `Common/Domain/` para reusar la validación de email y de texto de una línea.
+
 ## 0.2.0 - 2026-11-19
 
 ### Agregado
