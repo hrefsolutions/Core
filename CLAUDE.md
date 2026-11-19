@@ -92,7 +92,7 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 
 ## Verificación
 
-- CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main`, con `contents: read`. Pasos: `dotnet restore`, `dotnet build` (equivale al typecheck) y `dotnet test`.
+- CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main`, con `contents: read` y un timeout de 20 minutos. Pasos: chequeo de reglas de código (sin comentarios en línea ni caracteres U+2028/U+2029 en `src` y `tests`), `dotnet restore`, `dotnet build -warnaserror` (equivale al typecheck; cualquier warning rompe el build), `dotnet test --blame-hang-timeout 5m` y `docker build` de la imagen que construye Railway.
 - La imagen Docker la construye Railway.
 - Claude no corre build, test ni lint en local: indica qué comando correr y el usuario le pasa el resultado.
 - Tests de integración (`tests/Href.Core.Tests/Integration/`):

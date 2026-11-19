@@ -12,9 +12,10 @@ public sealed class PersistenceIntegrationTests(PostgresFixture postgres)
     [Fact]
     public async Task SessionFactory_ExecutesSelectOneAgainstPostgres()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         using var session = postgres.SessionFactory.OpenSession();
 
-        var result = await session.CreateSQLQuery("SELECT 1").UniqueResultAsync<int>();
+        var result = await session.CreateSQLQuery("SELECT 1").UniqueResultAsync<int>(cancellationToken);
 
         Assert.Equal(1, result);
     }
@@ -22,11 +23,12 @@ public sealed class PersistenceIntegrationTests(PostgresFixture postgres)
     [Fact]
     public async Task DatabaseMigrator_CreatesSchemaVersionsJournalTable()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         using var session = postgres.SessionFactory.OpenSession();
 
         var count = await session
             .CreateSQLQuery("SELECT COUNT(*) FROM schemaversions WHERE scriptname LIKE '%0000_baseline.sql'")
-            .UniqueResultAsync<long>();
+            .UniqueResultAsync<long>(cancellationToken);
 
         Assert.Equal(1L, count);
     }
@@ -47,6 +49,7 @@ public sealed class PersistenceIntegrationTests(PostgresFixture postgres)
     [Fact]
     public async Task AuditTimestampListener_RoundTripsCreatedAndUpdatedTimestampsAsUtc()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 11, 18, 15, 30, 0, TimeSpan.Zero));
         using var sessionFactory = postgres.BuildSessionFactory(
             timeProvider,
@@ -61,7 +64,7 @@ public sealed class PersistenceIntegrationTests(PostgresFixture postgres)
                 created_at_utc TIMESTAMPTZ NOT NULL,
                 updated_at_utc TIMESTAMPTZ NOT NULL
             );
-            """).ExecuteUpdateAsync();
+            """).ExecuteUpdateAsync(cancellationToken);
 
         var entity = new AuditTimestampListenerTests.SampleAuditableEntity
         {
@@ -71,8 +74,8 @@ public sealed class PersistenceIntegrationTests(PostgresFixture postgres)
 
         using (var insertTransaction = session.BeginTransaction())
         {
-            await session.SaveAsync(entity);
-            await insertTransaction.CommitAsync();
+            await session.SaveAsync(entity, cancellationToken);
+            await insertTransaction.CommitAsync(cancellationToken);
         }
 
         timeProvider.Advance(TimeSpan.FromMinutes(30));
@@ -81,12 +84,12 @@ public sealed class PersistenceIntegrationTests(PostgresFixture postgres)
         using (var updateTransaction = session.BeginTransaction())
         {
             entity.Name = $"updated-{Guid.NewGuid():N}";
-            await session.FlushAsync();
-            await updateTransaction.CommitAsync();
+            await session.FlushAsync(cancellationToken);
+            await updateTransaction.CommitAsync(cancellationToken);
         }
 
         session.Clear();
-        var reloaded = await session.GetAsync<AuditTimestampListenerTests.SampleAuditableEntity>(entity.Id);
+        var reloaded = await session.GetAsync<AuditTimestampListenerTests.SampleAuditableEntity>(entity.Id, cancellationToken);
 
         Assert.NotNull(reloaded);
         Assert.Equal(initialUtc, reloaded.CreatedAtUtc);
