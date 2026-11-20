@@ -4,6 +4,22 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Agregado
+
+- Claves de firma JWT (RS256) desde variables de entorno (`Modules/Auth/`, #22): sección `Jwt` con `Issuer`, `SigningKey:KeyId`, `SigningKey:PrivateKeyPem` (PEM PKCS#8 o PKCS#1, mínimo 2048 bits, se recomiendan 3072), `PreviousPublicKeys[]` para seguir validando tokens durante una rotación, `AccessTokenMinutes` (15, de 1 a 60) y `RefreshTokenDays` (30, de 1 a 365). Se valida al arrancar: fuera de Development la API no arranca sin clave, con un PEM que no se puede importar o de otro tipo (una clave pública como clave de firma, una privada como clave anterior), con una clave chica, con `kid` mal formados o repetidos, con un issuer que no es una URL `https` (se admite `http` solo en loopback) o con duraciones fuera de rango; los mensajes nunca incluyen la clave. En Development sin clave se genera una clave efímera de 3072 bits y se loguea un warning (los tokens mueren al reiniciar).
+- `GET /.well-known/jwks.json` (anónimo): publica las claves públicas (la actual primero y después las anteriores) con su `kid`, solo `n` y `e`, con `Cache-Control: public, max-age=3600`. Un token firmado con la clave actual valida contra el JWK publicado y uno firmado con otra clave no.
+- `GET /.well-known/openid-configuration` (anónimo): devuelve solo `issuer` y `jwks_uri`, para que las aplicaciones satélite usen `AddJwtBearer(o => o.Authority = ...)` sin código propio.
+- Paquete `Microsoft.IdentityModel.JsonWebTokens` 8.23.0.
+
+### Cambiado
+
+- El contenedor local (`docker compose --profile container` y `docker run --env-file`) sigue corriendo como `Production`, así que necesita una clave: `docker-compose.yml` la toma de la variable `JWT_SIGNING_PRIVATE_KEY_PEM` y `.env.example` suma las variables `Jwt__*`. El `README.md` explica cómo generar una clave local en una línea.
+- `.gitignore` ignora `*.pem` y `*.key`.
+
+### Documentación
+
+- `docs/instructions.md`: variables `Jwt__*` para Railway, generación de la clave de producción con OpenSSL, rotación manual con `PreviousPublicKeys` y qué hacer si la clave se filtra.
+
 ## 0.3.0 - 2026-11-19
 
 ### Agregado
