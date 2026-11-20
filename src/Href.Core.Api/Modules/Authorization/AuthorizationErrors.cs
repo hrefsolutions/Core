@@ -35,4 +35,55 @@ public static class AuthorizationErrors
     public static readonly Error AccessAlreadyGranted = Error.Conflict(
         "Authorization.AccessAlreadyGranted",
         "The user already has access to the application.");
+
+    public static readonly Error PermissionNotFound = Error.NotFound(
+        "Authorization.PermissionNotFound",
+        "The application has no permission with the specified key.");
+
+    public static readonly Error RoleNotFound = Error.NotFound(
+        "Authorization.RoleNotFound",
+        "The application has no role with the specified id.");
+
+    public static readonly Error AccessNotFound = Error.NotFound(
+        "Authorization.AccessNotFound",
+        "The user has no access to the application.");
+
+    public static readonly Error InvalidPermissionKeys = Error.Validation(
+        "Authorization.InvalidPermissionKeys",
+        "The permission keys must be a list of up to 200 non-empty keys.");
+
+    public static readonly Error InvalidRoleIds = Error.Validation(
+        "Authorization.InvalidRoleIds",
+        "The role ids must be a list of up to 200 ids.");
+
+    public static readonly Error InvalidPage = Error.Validation(
+        "Authorization.InvalidPage",
+        "The page must be 1 or greater.");
+
+    public static readonly Error InvalidPageSize = Error.Validation(
+        "Authorization.InvalidPageSize",
+        "The page size must be between 1 and 200.");
+
+    public const string UnknownPermissionsCode = "Authorization.UnknownPermissions";
+
+    public const string UnknownRolesCode = "Authorization.UnknownRoles";
+
+    /// <summary>
+    /// Permission keys that the application does not define (unknown, or defined by another application). Lists up to 10 keys.
+    /// </summary>
+    public static Error UnknownPermissions(IEnumerable<string> keys) =>
+        Error.Validation(UnknownPermissionsCode, $"Unknown permission keys for this application: {Describe(keys)}.");
+
+    /// <summary>
+    /// Role ids that the application does not define (unknown, or roles of another application). Lists up to 10 ids.
+    /// </summary>
+    public static Error UnknownRoles(IEnumerable<Guid> ids) =>
+        Error.Validation(UnknownRolesCode, $"Unknown role ids for this application: {Describe(ids.Select(id => id.ToString()))}.");
+
+    private static string Describe(IEnumerable<string> values)
+    {
+        var sorted = values.Order(StringComparer.Ordinal).ToList();
+        var shown = string.Join(", ", sorted.Take(10));
+        return sorted.Count > 10 ? $"{shown} (+{sorted.Count - 10} more)" : shown;
+    }
 }
