@@ -153,6 +153,8 @@ The API only queues notifications (outbox pattern); `NotificationBackgroundWorke
 
 ## Environment variables
 
+Railway setup (what to set, what not to set, first deploy checklist): `docs/instructions.md`. Keep both in sync.
+
 | Variable                               | Required   | Default       | Notes                                        |
 |----------------------------------------|------------|---------------|----------------------------------------------|
 | `ASPNETCORE_ENVIRONMENT`               | no         | `Production`  | `Development` loads `appsettings.Development.json`. |

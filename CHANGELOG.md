@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.3.0 - 2026-11-19
+
 ### Agregado
 
 - Endpoints de administración de permisos, roles y accesos por aplicación bajo `/api/apps/{appKey}` (públicos hasta #53): `permissions` (listar, ver, crear, cambiar la descripción y borrar), `roles` (listar, ver, crear con permisos e `isDefault`, editar nombre, descripción e `isDefault`, reemplazar permisos y borrar) y `users` (listar paginado los usuarios con acceso y sus roles, asignar roles —otorga el acceso si no lo tenía— y revocar). Claves de permiso o roles desconocidos o de otra aplicación devuelven `400` listándolos; nombres de rol repetidos sin distinguir mayúsculas y claves repetidas devuelven `409`. Toda escritura bloquea la fila de la aplicación, así que las escrituras concurrentes de una aplicación se serializan (por ejemplo, queda un solo rol por defecto). Cada cambio se audita con el `app_key` de la aplicación; al borrar un permiso o un rol se audita también cada rol o acceso del que se quitó, y las escrituras sin cambios no generan fila de auditoría. Se agregan `GET` de un permiso y de un rol (destino del `Location` de los `POST`) y `PUT` de la descripción de un permiso, que no estaban en el plan de #21.
@@ -20,6 +22,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 - `AuditActions`: se reemplazan `USER_LOCK_CHANGED` y `PERMISSION_ASSIGNED` (sin uso) por `USER_LOCKED` / `USER_UNLOCKED` y `ROLE_PERMISSIONS_CHANGED`.
 - `TextRules` pasa de `Modules/Notifications/` a `Common/Domain/` para reusar la validación de email y de texto de una línea.
+
+### Documentación
+
+- `docs/instructions.md`: instrucciones de despliegue en Railway con cada variable de entorno que usa la API (las que hay que cargar, las que no hay que tocar y las opcionales con su valor por defecto) y la lista de verificación del primer deploy. Enlazado desde `README.md` y `SYSTEM_MAP.md`.
 
 ## 0.2.0 - 2026-11-19
 

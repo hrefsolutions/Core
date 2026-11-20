@@ -94,7 +94,7 @@ docker run --rm -p 8080:8080 --env-file .env.example href-core
 
 ## Configuration
 
-`.env.example` lists the variables the container needs (the API itself does not read `.env`; `dotnet run` uses `appsettings.Development.json`). Details in `SYSTEM_MAP.md`. On Railway set `ConnectionStrings__DefaultConnection` (Npgsql format, for example `Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}`) and use `/health` as the health check path. Railway sets `PORT`.
+`.env.example` lists the variables the container needs (the API itself does not read `.env`; `dotnet run` uses `appsettings.Development.json`). Details in `SYSTEM_MAP.md`. On Railway set `ConnectionStrings__DefaultConnection` (Npgsql format, for example `Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}`) and use `/health` as the health check path. Railway sets `PORT`. Step-by-step Railway setup, with every environment variable: [`docs/instructions.md`](docs/instructions.md).
 
 ## Contributing
 
