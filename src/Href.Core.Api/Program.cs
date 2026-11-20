@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Auth;
 using Href.Core.Api.Modules.Authorization;
 using Href.Core.Api.Modules.Notifications;
 using Href.Core.Api.Modules.Notifications.Email;
@@ -59,6 +60,7 @@ try
     builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
     builder.Services.AddSmtpEmail(builder.Configuration);
     builder.Services.AddNotificationWorker(builder.Configuration);
+    builder.Services.AddJwtSigning(builder.Configuration);
     builder.Services
         .AddAuthentication()
         .AddScheme<AuthenticationSchemeOptions, AppKeyAuthenticationHandler>(
