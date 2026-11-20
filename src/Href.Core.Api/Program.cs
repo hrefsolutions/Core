@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Authorization;
 using Href.Core.Api.Modules.Notifications;
 using Href.Core.Api.Modules.Notifications.Email;
 using Href.Core.Api.Modules.Notifications.Worker;
@@ -50,6 +51,9 @@ try
     builder.Services.AddScoped<NotificationService>();
     builder.Services.AddScoped<EmailTemplateService>();
     builder.Services.AddScoped<UserService>();
+    builder.Services.AddScoped<PermissionAdminService>();
+    builder.Services.AddScoped<RoleAdminService>();
+    builder.Services.AddScoped<ApplicationAccessService>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
     builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
