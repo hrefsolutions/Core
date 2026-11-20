@@ -223,7 +223,10 @@ public class User : Entity, IAuditableEntity
         LastLoginAtUtc = utcNow;
     }
 
-    private static Result<string> NormalizeEmail(string? email)
+    /// <summary>
+    /// Trims and lower-cases an email and validates it as a single bare address, the same way the entity stores it.
+    /// </summary>
+    public static Result<string> NormalizeEmail(string? email)
     {
         var normalized = email?.Trim().ToLowerInvariant() ?? string.Empty;
 

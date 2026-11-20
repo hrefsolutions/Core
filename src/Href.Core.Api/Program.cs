@@ -49,6 +49,7 @@ try
     builder.Services.AddScoped<ApplicationService>();
     builder.Services.AddScoped<NotificationService>();
     builder.Services.AddScoped<EmailTemplateService>();
+    builder.Services.AddScoped<UserService>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
     builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
