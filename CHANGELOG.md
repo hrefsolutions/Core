@@ -11,19 +11,19 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - `GET /.well-known/openid-configuration` (anónimo): devuelve solo `issuer` y `jwks_uri`, para que las aplicaciones satélite usen `AddJwtBearer(o => o.Authority = ...)` sin código propio (un test recorre el mismo descubrimiento que usa JwtBearer y valida un token del Core con las claves que encuentra).
 - Entidad `RefreshToken` (`Modules/Auth/`, #23) con su mapping y la migración `0007_create_refresh_tokens.sql`:
   - El token es opaco y se guarda solo su SHA-256. El texto en claro (32 bytes aleatorios en base64url) se devuelve una sola vez, al emitirlo.
-  - Los tokens se agrupan por `FamilyId`. Cada uso revoca el token como `Rotated` y emite un sucesor en la misma familia, con un nuevo vencimiento de `Jwt:RefreshTokenDays` (vencimiento deslizante).
+  - Los tokens se agrupan por `FamilyId`. Cada uso revoca el token como `Rotated` y emite un sucesor en la misma familia, que vence a partir de ese momento según la duración que pasa quien llama. La conexión con `Jwt:RefreshTokenDays` llega en #24. El vencimiento es deslizante y no hay tope absoluto por familia, por decisión aceptada.
+  - `HashToken` devuelve `null` para un token vacío o ausente, así que buscarlo no da error.
   - Presentar un token ya rotado devuelve `Auth.RefreshTokenReused`, y quien llama revoca toda la familia como `ReuseDetected` (solo los tokens activos; los ya revocados conservan su motivo). Un token revocado por otro motivo devuelve `Auth.RefreshTokenRevoked` y uno vencido, `Auth.RefreshTokenExpired`; ningún error cambia el estado.
   - Motivos de revocación: `Rotated`, `Logout`, `ReuseDetected`, `PasswordReset`, `UserLocked` y `AdminRevoked`.
   - La IP y el user agent se normalizan: la IP se descarta si es demasiado larga o tiene caracteres de control, y el user agent pierde los `NUL` y se trunca a 512 sin partir un carácter.
-  - La columna `version` (concurrencia optimista) impide que dos rotaciones simultáneas del mismo token confirmen las dos: la segunda falla, así que un token nunca tiene dos sucesores.
-  - La tabla `refresh_tokens` tiene FKs a `users`, `applications` y a sí misma (`replaced_by_token_id`), el índice único `ux_refresh_tokens_token_hash`, índices por usuario, familia y aplicación, y `CHECK` sobre el motivo, la coherencia de la revocación y el vencimiento.
-  - La limpieza de tokens vencidos queda para más adelante.
+  - La columna `version` (concurrencia optimista) impide que dos rotaciones simultáneas del mismo token confirmen las dos: la segunda falla, así que un token nunca tiene dos sucesores. No ordena una rotación frente a una revocación de familia o de usuario en otra transacción. Por eso, los servicios de #24 y #25 tienen que serializar las escrituras de tokens de cada usuario. Esta regla está documentada en `SYSTEM_MAP.md`.
+  - La tabla `refresh_tokens` tiene:
+    - FKs a `users`, a `applications` y a sí misma (`replaced_by_token_id`, diferida hasta el commit);
+    - el índice único `ux_refresh_tokens_token_hash`, un índice por familia y un índice parcial de los tokens activos por usuario y aplicación;
+    - `CHECK` sobre el motivo, la coherencia de la revocación, el reemplazo (que existe solo y siempre con `Rotated`) y el vencimiento.
+  - La limpieza de tokens vencidos queda para más adelante y tiene que borrar familias completas.
 - Paquete `Microsoft.IdentityModel.JsonWebTokens` 8.23.0 (y `Microsoft.IdentityModel.Protocols.OpenIdConnect` 8.23.0 solo en los tests).
 
-### Cambiado
-
-- El contenedor local (`docker compose --profile container` y `docker run --env-file`) sigue corriendo como `Production`, así que necesita una clave: `docker-compose.yml` la toma de la variable `JWT_SIGNING_PRIVATE_KEY_PEM` y `.env.example` suma las variables `Jwt__*`. El `README.md` explica cómo generar una clave local en una línea.
-- `.gitignore` ignora `*.pem` y `*.key`.
 ### Corregido
 
 - La línea de log de cada request (`UseSerilogRequestLogging`) se escribe en el logger de Serilog del host, el del contenedor de DI, y no en el `Log.Logger` estático. `AddSerilog` usa `preserveStaticLogger: true`.
@@ -31,6 +31,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
   - **En producción:** hay un solo host y el comportamiento no cambia.
   - **Test de regresión:** `RequestCompletionLog_GoesToTheHostLoggerEvenWhenTheStaticLoggerIsReplaced`.
 
+### Cambiado
+
+- El contenedor local (`docker compose --profile container` y `docker run --env-file`) sigue corriendo como `Production`, así que necesita una clave: `docker-compose.yml` la toma de la variable `JWT_SIGNING_PRIVATE_KEY_PEM` y `.env.example` suma las variables `Jwt__*`. El `README.md` explica cómo generar una clave local en una línea.
+- `.gitignore` ignora `*.pem` y `*.key`.
 
 ### Documentación
 

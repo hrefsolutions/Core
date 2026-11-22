@@ -15,6 +15,7 @@ namespace Href.Core.Api.Modules.Auth;
 public class RefreshToken : Entity
 {
     public const int TokenHashLength = 64;
+    public const string TokenHashUniqueIndexName = "ux_refresh_tokens_token_hash";
     public const int IpAddressMaxLength = 45;
     public const int UserAgentMaxLength = 512;
     public const int RevokedReasonMaxLength = 30;
@@ -47,7 +48,9 @@ public class RefreshToken : Entity
 
     /// <summary>
     /// Optimistic concurrency version: two concurrent rotations of the same token cannot both commit, so a token never
-    /// gets two successors.
+    /// gets two successors. It does not order a rotation against a family or user revocation in another transaction:
+    /// the services that rotate or revoke tokens must serialize the token writes of one user (and read the tokens again
+    /// after taking that lock), or a reuse revocation can miss a successor committed concurrently.
     /// </summary>
     public virtual int Version { get; protected set; }
 
@@ -79,9 +82,11 @@ public class RefreshToken : Entity
     }
 
     /// <summary>
-    /// Hashes a plain refresh token the way it is stored, to look it up by <see cref="TokenHash"/>.
+    /// Hashes a plain refresh token the way it is stored, to look it up by <see cref="TokenHash"/>. Returns <c>null</c> for a
+    /// missing or blank token (no stored token can match it), so a request without a token is not an error here.
     /// </summary>
-    public static string HashToken(string plainToken) => ClientSecretGenerator.Hash(plainToken);
+    public static string? HashToken(string? plainToken) =>
+        string.IsNullOrWhiteSpace(plainToken) ? null : ClientSecretGenerator.Hash(plainToken);
 
     /// <summary>
     /// Revokes every active token of one family (the tokens already revoked keep their reason) and returns how many changed.
@@ -174,7 +179,7 @@ public class RefreshToken : Entity
             UserId = userId,
             ApplicationId = applicationId,
             FamilyId = familyId,
-            TokenHash = HashToken(plainToken),
+            TokenHash = ClientSecretGenerator.Hash(plainToken),
             CreatedAtUtc = nowUtc,
             ExpiresAtUtc = nowUtc + lifetime,
             CreatedByIp = NormalizeIpAddress(createdByIp),

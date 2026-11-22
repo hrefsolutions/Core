@@ -137,7 +137,7 @@ public sealed class RefreshTokenPersistenceIntegrationTests(PostgresFixture post
         var second = first.Rotate(Now.AddMinutes(1), Lifetime, null, null).Value.Token;
         var third = second.Rotate(Now.AddMinutes(2), Lifetime, null, null).Value.Token;
         var otherFamily = RefreshToken.Issue(user.Id, application.Id, Now, Lifetime, null, null).Token;
-        await SaveAllAsync(cancellationToken, third, second, first, otherFamily);
+        await SaveAllAsync(cancellationToken, first, second, third, otherFamily);
 
         using (var session = postgres.SessionFactory.OpenSession())
         using (var transaction = session.BeginTransaction())
@@ -172,7 +172,32 @@ public sealed class RefreshTokenPersistenceIntegrationTests(PostgresFixture post
         var postgresException = PostgresExceptions.Find(exception);
         Assert.NotNull(postgresException);
         Assert.Equal(PostgresErrorCodes.UniqueViolation, postgresException.SqlState);
-        Assert.Equal("ux_refresh_tokens_token_hash", postgresException.ConstraintName);
+        Assert.Equal(RefreshToken.TokenHashUniqueIndexName, postgresException.ConstraintName);
+    }
+
+    [Fact]
+    public async Task Indexes_AreTheUniqueHashTheFamilyAndThePartialActiveIndex()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'refresh_tokens' AND indexname <> 'refresh_tokens_pkey' ORDER BY indexname",
+            connection);
+        var indexes = new Dictionary<string, string>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                indexes[reader.GetString(0)] = reader.GetString(1);
+            }
+        }
+
+        Assert.Equal(
+            ["ix_refresh_tokens_family_id", "ix_refresh_tokens_user_id_application_id_active", RefreshToken.TokenHashUniqueIndexName],
+            indexes.Keys.Order(StringComparer.Ordinal));
+        Assert.Contains("UNIQUE", indexes[RefreshToken.TokenHashUniqueIndexName], StringComparison.Ordinal);
+        Assert.Contains("(user_id, application_id) WHERE (revoked_at_utc IS NULL)", indexes["ix_refresh_tokens_user_id_application_id_active"], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -208,6 +233,7 @@ public sealed class RefreshTokenPersistenceIntegrationTests(PostgresFixture post
     [InlineData(false, "Logout", false, "ck_refresh_tokens_revocation")]
     [InlineData(true, "Expired", false, "ck_refresh_tokens_revoked_reason")]
     [InlineData(true, "Logout", true, "ck_refresh_tokens_replaced_by")]
+    [InlineData(true, "Rotated", false, "ck_refresh_tokens_replaced_by")]
     public async Task InconsistentRevocationState_IsRejectedByCheckConstraints(
         bool revoked,
         string? reason,

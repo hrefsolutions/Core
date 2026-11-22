@@ -37,6 +37,15 @@ public sealed class RefreshTokenTests
         Assert.True(token.IsActive(Now));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void HashToken_ForAMissingOrBlankToken_ReturnsNull(string? plainToken)
+    {
+        Assert.Null(RefreshToken.HashToken(plainToken));
+    }
+
     [Fact]
     public void Issue_TwiceForTheSameUser_StartsDifferentFamiliesAndTokens()
     {
