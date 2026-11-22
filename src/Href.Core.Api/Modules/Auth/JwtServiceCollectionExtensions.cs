@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Href.Core.Api.Modules.Auth;
@@ -6,7 +7,7 @@ public static class JwtServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <see cref="JwtOptions"/> (issuer without trailing slash, validated on startup), the singleton
-    /// <see cref="JwtKeyProvider"/> and <see cref="JwtStartupCheck"/>.
+    /// <see cref="JwtKeyProvider"/>, the singleton <see cref="AccessTokenFactory"/> and <see cref="JwtStartupCheck"/>.
     /// </summary>
     public static IServiceCollection AddJwtSigning(this IServiceCollection services, IConfiguration configuration)
     {
@@ -17,6 +18,8 @@ public static class JwtServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<JwtOptions>, JwtOptionsValidator>();
         services.AddSingleton<JwtKeyProvider>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<AccessTokenFactory>();
         services.AddHostedService<JwtStartupCheck>();
         return services;
     }

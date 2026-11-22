@@ -57,6 +57,8 @@ try
     builder.Services.AddScoped<PermissionAdminService>();
     builder.Services.AddScoped<RoleAdminService>();
     builder.Services.AddScoped<ApplicationAccessService>();
+    builder.Services.AddScoped<AuthService>();
+    builder.Services.AddSingleton<DummyPasswordHash>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
     builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
