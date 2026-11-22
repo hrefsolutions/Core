@@ -21,10 +21,12 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.Services.AddSerilog((services, logger) => logger
-        .ReadFrom.Configuration(builder.Configuration)
-        .ReadFrom.Services(services)
-        .Enrich.FromLogContext());
+    builder.Services.AddSerilog(
+        (services, logger) => logger
+            .ReadFrom.Configuration(builder.Configuration)
+            .ReadFrom.Services(services)
+            .Enrich.FromLogContext(),
+        preserveStaticLogger: true);
 
     builder.Services.AddControllers();
     builder.Services.AddProblemDetails(options =>
@@ -78,7 +80,7 @@ try
 
     app.UseForwardedHeaders();
     app.UseMiddleware<CorrelationIdMiddleware>();
-    app.UseSerilogRequestLogging();
+    app.UseSerilogRequestLogging(options => options.Logger = app.Services.GetRequiredService<Serilog.ILogger>());
     app.UseExceptionHandler();
     app.UseStatusCodePages();
     app.UseAuthentication();

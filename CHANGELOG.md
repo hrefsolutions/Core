@@ -9,7 +9,27 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - Claves de firma JWT (RS256) desde variables de entorno (`Modules/Auth/`, #22): sección `Jwt` con `Issuer`, `SigningKey:KeyId`, `SigningKey:PrivateKeyPem` (PEM PKCS#8 o PKCS#1, mínimo 2048 bits, se recomiendan 3072), `PreviousPublicKeys[]` para seguir validando tokens durante una rotación, `AccessTokenMinutes` (15, de 1 a 60) y `RefreshTokenDays` (30, de 1 a 365). Se valida al arrancar: fuera de Development la API no arranca sin clave, con un PEM que no se puede importar o de otro tipo (una clave pública como clave de firma, una privada como clave anterior), con una clave chica, con `kid` mal formados o repetidos, con un issuer que no es una URL `https` (se admite `http` solo en loopback) o que tiene ruta (las rutas `/.well-known` están en la raíz), o con duraciones fuera de rango; los mensajes nunca incluyen la clave. En Development sin clave se genera una clave efímera de 3072 bits y se loguea un warning (los tokens mueren al reiniciar).
 - `GET /.well-known/jwks.json` (anónimo): publica las claves públicas (la actual primero y después las anteriores) con su `kid`, solo `n` y `e`, con `Cache-Control: public, max-age=3600`. Un token firmado con la clave actual valida contra el JWK publicado y uno firmado con otra clave no.
 - `GET /.well-known/openid-configuration` (anónimo): devuelve solo `issuer` y `jwks_uri`, para que las aplicaciones satélite usen `AddJwtBearer(o => o.Authority = ...)` sin código propio (un test recorre el mismo descubrimiento que usa JwtBearer y valida un token del Core con las claves que encuentra).
+- Entidad `RefreshToken` (`Modules/Auth/`, #23) con su mapping y la migración `0007_create_refresh_tokens.sql`:
+  - El token es opaco y se guarda solo su SHA-256. El texto en claro (32 bytes aleatorios en base64url) se devuelve una sola vez, al emitirlo.
+  - Los tokens se agrupan por `FamilyId`. Cada uso revoca el token como `Rotated` y emite un sucesor en la misma familia, que vence a partir de ese momento según la duración que pasa quien llama. La conexión con `Jwt:RefreshTokenDays` llega en #24. El vencimiento es deslizante y no hay tope absoluto por familia, por decisión aceptada.
+  - `HashToken` devuelve `null` para un token vacío o ausente, así que buscarlo no da error.
+  - Presentar un token ya rotado devuelve `Auth.RefreshTokenReused`, y quien llama revoca toda la familia como `ReuseDetected` (solo los tokens activos; los ya revocados conservan su motivo). Un token revocado por otro motivo devuelve `Auth.RefreshTokenRevoked` y uno vencido, `Auth.RefreshTokenExpired`; ningún error cambia el estado.
+  - Motivos de revocación: `Rotated`, `Logout`, `ReuseDetected`, `PasswordReset`, `UserLocked` y `AdminRevoked`.
+  - La IP y el user agent se normalizan: la IP se descarta si es demasiado larga o tiene caracteres de control, y el user agent pierde los `NUL` y se trunca a 512 sin partir un carácter.
+  - La columna `version` (concurrencia optimista) impide que dos rotaciones simultáneas del mismo token confirmen las dos: la segunda falla, así que un token nunca tiene dos sucesores. No ordena una rotación frente a una revocación de familia o de usuario en otra transacción. Por eso, los servicios de #24 y #25 tienen que serializar las escrituras de tokens de cada usuario. Esta regla está documentada en `SYSTEM_MAP.md`.
+  - La tabla `refresh_tokens` tiene:
+    - FKs a `users`, a `applications` y a sí misma (`replaced_by_token_id`, diferida hasta el commit);
+    - el índice único `ux_refresh_tokens_token_hash`, un índice por familia y un índice parcial de los tokens activos por usuario y aplicación;
+    - `CHECK` sobre el motivo, la coherencia de la revocación, el reemplazo (que existe solo y siempre con `Rotated`) y el vencimiento.
+  - La limpieza de tokens vencidos queda para más adelante y tiene que borrar familias completas.
 - Paquete `Microsoft.IdentityModel.JsonWebTokens` 8.23.0 (y `Microsoft.IdentityModel.Protocols.OpenIdConnect` 8.23.0 solo en los tests).
+
+### Corregido
+
+- La línea de log de cada request (`UseSerilogRequestLogging`) se escribe en el logger de Serilog del host, el del contenedor de DI, y no en el `Log.Logger` estático. `AddSerilog` usa `preserveStaticLogger: true`.
+  - **Antes:** el estático era global al proceso, lo pisaba cada host que arrancaba, y `Program.cs` lo cerraba al terminar. Con varios hosts en un mismo proceso, como en los tests de integración, el log de un request podía ir a otro host o a un logger ya cerrado. Por eso `GetMe_WithValidCredentials_AddsAppKeyToRequestCompletionLog` fallaba de forma intermitente.
+  - **En producción:** hay un solo host y el comportamiento no cambia.
+  - **Test de regresión:** `RequestCompletionLog_GoesToTheHostLoggerEvenWhenTheStaticLoggerIsReplaced`.
 
 ### Cambiado
 
