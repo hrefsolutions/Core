@@ -24,6 +24,13 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 - El contenedor local (`docker compose --profile container` y `docker run --env-file`) sigue corriendo como `Production`, así que necesita una clave: `docker-compose.yml` la toma de la variable `JWT_SIGNING_PRIVATE_KEY_PEM` y `.env.example` suma las variables `Jwt__*`. El `README.md` explica cómo generar una clave local en una línea.
 - `.gitignore` ignora `*.pem` y `*.key`.
+### Corregido
+
+- La línea de log de cada request (`UseSerilogRequestLogging`) se escribe en el logger de Serilog del host, el del contenedor de DI, y no en el `Log.Logger` estático. `AddSerilog` usa `preserveStaticLogger: true`.
+  - **Antes:** el estático era global al proceso, lo pisaba cada host que arrancaba, y `Program.cs` lo cerraba al terminar. Con varios hosts en un mismo proceso, como en los tests de integración, el log de un request podía ir a otro host o a un logger ya cerrado. Por eso `GetMe_WithValidCredentials_AddsAppKeyToRequestCompletionLog` fallaba de forma intermitente.
+  - **En producción:** hay un solo host y el comportamiento no cambia.
+  - **Test de regresión:** `RequestCompletionLog_GoesToTheHostLoggerEvenWhenTheStaticLoggerIsReplaced`.
+
 
 ### Documentación
 

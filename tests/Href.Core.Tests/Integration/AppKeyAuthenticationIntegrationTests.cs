@@ -4,6 +4,7 @@ using Href.Core.Api.Modules.Applications;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 
@@ -74,6 +75,35 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
 
         Assert.True(completion.Properties.TryGetValue(AppKeyLogContextMiddleware.PropertyName, out var value));
         Assert.Equal(appKey, Assert.IsType<ScalarValue>(value).Value);
+    }
+
+    [Fact]
+    public async Task RequestCompletionLog_GoesToTheHostLoggerEvenWhenTheStaticLoggerIsReplaced()
+    {
+        var sink = new CapturingLogSink();
+        await using var baseFactory = new ApiFactory(postgres.ConnectionString);
+        await using var factory = baseFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.AddSingleton<ILogEventSink>(sink)));
+        using var client = factory.CreateClient();
+        var previousStaticLogger = Log.Logger;
+        Log.Logger = new LoggerConfiguration().CreateLogger();
+
+        try
+        {
+            var response = await client.GetAsync("/health", TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            await sink.WaitForAsync(
+                logEvent => logEvent.MessageTemplate.Text.StartsWith("HTTP ", StringComparison.Ordinal)
+                    && logEvent.Properties.TryGetValue("RequestPath", out var path)
+                    && path is ScalarValue { Value: "/health" },
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            Log.Logger = previousStaticLogger;
+        }
     }
 
     [Fact]

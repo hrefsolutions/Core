@@ -50,7 +50,7 @@ Update this file in the same PR that changes any of the items below.
 
 1. `UseForwardedHeaders`: takes the client IP and scheme from `X-Forwarded-For` / `X-Forwarded-Proto` (`ForwardLimit = 1`: only the rightmost entry, the one added by the Railway proxy, so clients cannot spoof it). Any proxy is trusted, so the container must only be reachable through Railway's proxy.
 2. `CorrelationIdMiddleware`: reads or creates `X-Correlation-Id`, returns it in the response and adds `CorrelationId` to every log line.
-3. `UseSerilogRequestLogging`: one log line per request.
+3. `UseSerilogRequestLogging`: one log line per request, written to the host's Serilog logger from DI (`options.Logger`), not to the static `Log.Logger`. `AddSerilog` uses `preserveStaticLogger: true`, so each host owns and disposes its logger. The static logger stays the bootstrap console logger of `Program.cs`, used only for startup and fatal errors.
 4. `UseExceptionHandler` + `GlobalExceptionHandler`: unhandled exceptions become RFC 7807 `ProblemDetails` (500). Every `ProblemDetails` includes `instance` and `correlationId`.
 5. `UseStatusCodePages`: empty error responses (such as 404 or 405) are formatted as `ProblemDetails`.
 6. `UseAuthentication` + `UseAuthorization`: scheme `AppKey` (`AppKeyAuthenticationHandler`, headers `X-App-Key` and `X-App-Secret`, claims `app_id` and `app_key`) and policy `Application`.
