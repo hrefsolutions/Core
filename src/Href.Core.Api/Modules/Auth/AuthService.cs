@@ -12,11 +12,14 @@ namespace Href.Core.Api.Modules.Auth;
 /// <summary>
 /// Login and refresh for satellite backends authenticated with their M2M credentials. Every transaction that issues,
 /// rotates or revokes refresh tokens first takes a per-user PostgreSQL advisory lock and reads the tokens and the user
-/// again after it, so reuse detection and user checks cannot race another token write of the same user.
+/// again after it, so reuse detection and user checks cannot race another token write of the same user. This relies on
+/// READ COMMITTED (each statement after the lock sees the commits made before it was granted); the only reads before
+/// the lock are scalar projections or an entity that is evicted, never cached state used after it.
 /// </summary>
 public sealed class AuthService(
     ISession session,
     IPasswordHasher<User> passwordHasher,
+    DummyPasswordHash dummyPasswordHash,
     AccessTokenFactory accessTokenFactory,
     IOptions<JwtOptions> jwtOptions,
     IAuditService auditService,
@@ -25,14 +28,14 @@ public sealed class AuthService(
     public const string TokenType = "Bearer";
     public const string RefreshTokenFamilyEntityType = "RefreshTokenFamily";
 
-    private const string DummyPassword = "timing-equalizer-password";
-
-    private static string? _dummyPasswordHash;
-
     /// <summary>
     /// Checks the credentials and issues an access token and a new refresh token family for the calling application.
-    /// An unknown or malformed email and a wrong password return the same <see cref="AuthErrors.InvalidCredentials"/>
-    /// after a password hash verification of similar cost; the account state is reported only after a correct password.
+    /// A malformed or unknown email, an empty password and a wrong password return the same
+    /// <see cref="AuthErrors.InvalidCredentials"/> after exactly one password hash verification; the account state is
+    /// reported only after a correct password. The password is verified outside any transaction or lock (on a user that is
+    /// then evicted), so a password spray cannot hold the per-user lock or a connection; the transaction then takes the
+    /// lock, loads the user again <c>FOR UPDATE</c> (serialized with the admin user writes) and verifies again only if the
+    /// stored hash changed in between or needs an upgrade.
     /// </summary>
     public async Task<Result<TokenResponse>> LoginAsync(
         Guid applicationId,
@@ -44,26 +47,39 @@ public sealed class AuthService(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(client);
 
-        using var transaction = session.BeginTransaction();
-
         var email = User.NormalizeEmail(request.Email);
-        var userId = email.IsSuccess
-            ? await session.Query<User>()
-                .Where(candidate => candidate.Email == email.Value)
-                .Select(candidate => (Guid?)candidate.Id)
-                .SingleOrDefaultAsync(cancellationToken)
-            : null;
 
-        if (userId is null)
+        if (email.IsFailure || string.IsNullOrEmpty(request.Password))
         {
-            VerifyDummyPassword(request.Password);
+            dummyPasswordHash.Verify(request.Password);
             return AuthErrors.InvalidCredentials;
         }
 
-        await LockUserTokensAsync(userId.Value, cancellationToken);
-        var user = await session.GetAsync<User>(userId.Value, cancellationToken);
+        var candidate = await session.Query<User>()
+            .SingleOrDefaultAsync(existing => existing.Email == email.Value, cancellationToken);
 
-        if (!user.VerifyPassword(request.Password, passwordHasher))
+        if (candidate is null)
+        {
+            dummyPasswordHash.Verify(request.Password);
+            return AuthErrors.InvalidCredentials;
+        }
+
+        var verifiedHash = candidate.PasswordHash;
+        var passwordValid = candidate.VerifyPassword(request.Password, passwordHasher);
+        var rehashPending = candidate.PasswordHash != verifiedHash;
+        session.Evict(candidate);
+
+        if (!passwordValid)
+        {
+            return AuthErrors.InvalidCredentials;
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        await LockUserTokensAsync(candidate.Id, cancellationToken);
+        var user = await session.GetAsync<User>(candidate.Id, NHibernate.LockMode.Upgrade, cancellationToken);
+
+        if ((rehashPending || user.PasswordHash != verifiedHash) && !user.VerifyPassword(request.Password, passwordHasher))
         {
             return AuthErrors.InvalidCredentials;
         }
@@ -226,9 +242,4 @@ public sealed class AuthService(
             .SetParameter("userId", userId.ToString())
             .UniqueResultAsync(cancellationToken);
 
-    private void VerifyDummyPassword(string? password)
-    {
-        var dummyHash = _dummyPasswordHash ??= passwordHasher.HashPassword(null!, DummyPassword);
-        passwordHasher.VerifyHashedPassword(null!, dummyHash, string.IsNullOrEmpty(password) ? DummyPassword : password);
-    }
 }

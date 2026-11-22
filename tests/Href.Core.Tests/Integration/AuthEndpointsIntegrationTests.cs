@@ -6,8 +6,10 @@ using Href.Core.Api.Modules.Audit;
 using Href.Core.Api.Modules.Auth;
 using Href.Core.Api.Modules.Authorization;
 using Href.Core.Api.Modules.Users;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -112,6 +114,39 @@ public sealed class AuthEndpointsIntegrationTests(PostgresFixture postgres)
 
         await AssertProblemAsync(response, HttpStatusCode.Unauthorized, AuthErrors.InvalidCredentials, cancellationToken);
         Assert.Empty(await ReadRefreshTokensAsync(seed.User.Id, cancellationToken));
+    }
+
+    [Fact]
+    public async Task Login_EveryInvalidCredentialVariant_VerifiesExactlyOnePasswordHash()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var seed = await SeedAsync(cancellationToken);
+        var hasher = new CountingPasswordHasher();
+        await using var baseFactory = new ApiFactory(postgres.ConnectionString);
+        await using var factory = baseFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.AddSingleton<IPasswordHasher<User>>(hasher)));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(AppKeyAuthentication.AppKeyHeaderName, seed.App.AppKey);
+        client.DefaultRequestHeaders.Add(AppKeyAuthentication.AppSecretHeaderName, seed.App.Secret);
+        LoginRequest[] requests =
+        [
+            new($"nobody-{Guid.NewGuid():N}@example.com", Password),
+            new(seed.User.Email, "wrong horse battery"),
+            new("not an email", Password),
+            new(seed.User.Email, string.Empty),
+            new(seed.User.Email, null),
+            new(null, null),
+        ];
+
+        foreach (var request in requests)
+        {
+            hasher.Reset();
+
+            var response = await client.PostAsJsonAsync("/api/auth/login", request, cancellationToken);
+
+            await AssertProblemAsync(response, HttpStatusCode.Unauthorized, AuthErrors.InvalidCredentials, cancellationToken);
+            Assert.Equal(1, hasher.Verifications);
+        }
     }
 
     [Fact]
@@ -247,10 +282,23 @@ public sealed class AuthEndpointsIntegrationTests(PostgresFixture postgres)
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var client = CreateAppClient(factory, seed.App);
         var login = await LoginAsync(client, seed, cancellationToken);
+        await using var blocker = new NpgsqlConnection(postgres.ConnectionString);
+        await blocker.OpenAsync(cancellationToken);
+        await using var blockerTransaction = await blocker.BeginTransactionAsync(cancellationToken);
+        await using (var hold = new NpgsqlCommand(
+            "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended('refresh_tokens:' || @userId, 0))",
+            blocker,
+            blockerTransaction))
+        {
+            hold.Parameters.AddWithValue("userId", seed.User.Id.ToString());
+            await hold.ExecuteScalarAsync(cancellationToken);
+        }
 
-        var responses = await Task.WhenAll(
-            client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(login.RefreshToken), cancellationToken),
-            client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(login.RefreshToken), cancellationToken));
+        var first = client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(login.RefreshToken), cancellationToken);
+        var second = client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(login.RefreshToken), cancellationToken);
+        await WaitForBlockedAdvisoryLocksAsync(2, cancellationToken);
+        await blockerTransaction.CommitAsync(cancellationToken);
+        var responses = await Task.WhenAll(first, second);
 
         var winner = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
         var loser = Assert.Single(responses, response => response.StatusCode != HttpStatusCode.OK);
@@ -483,6 +531,29 @@ public sealed class AuthEndpointsIntegrationTests(PostgresFixture postgres)
             .ToListAsync(cancellationToken);
     }
 
+    private async Task WaitForBlockedAdvisoryLocksAsync(int expected, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+
+        while (true)
+        {
+            await using var command = new NpgsqlCommand(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted",
+                connection);
+            var blocked = (long)(await command.ExecuteScalarAsync(cancellationToken))!;
+
+            if (blocked >= expected)
+            {
+                return;
+            }
+
+            Assert.True(DateTime.UtcNow < deadline, $"Only {blocked} of {expected} requests reached the advisory lock.");
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
+        }
+    }
+
     private async Task<List<AuditRow>> ReadAuditAsync(string entityId, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(postgres.ConnectionString);
@@ -505,6 +576,24 @@ public sealed class AuthEndpointsIntegrationTests(PostgresFixture postgres)
         }
 
         return rows;
+    }
+
+    private sealed class CountingPasswordHasher : IPasswordHasher<User>
+    {
+        private readonly PasswordHasher<User> _inner = new();
+        private int _verifications;
+
+        public int Verifications => Volatile.Read(ref _verifications);
+
+        public void Reset() => Interlocked.Exchange(ref _verifications, 0);
+
+        public string HashPassword(User user, string password) => _inner.HashPassword(user, password);
+
+        public PasswordVerificationResult VerifyHashedPassword(User user, string hashedPassword, string providedPassword)
+        {
+            Interlocked.Increment(ref _verifications);
+            return _inner.VerifyHashedPassword(user, hashedPassword, providedPassword);
+        }
     }
 
     private sealed record SeededApplication(Guid Id, string AppKey, string Secret);

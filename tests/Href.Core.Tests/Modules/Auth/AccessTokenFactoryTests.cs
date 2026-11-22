@@ -23,7 +23,9 @@ public sealed class AccessTokenFactoryTests
 
         var token = new JsonWebToken(issued.Token);
         Assert.Equal("RS256", token.Alg);
+        Assert.Equal("at+jwt", token.Typ);
         Assert.Equal("core-2026-11", token.Kid);
+        Assert.Equal("billing", token.GetClaim("client_id").Value);
         Assert.Equal("https://core.example.com", token.Issuer);
         Assert.Equal(["billing"], token.Audiences);
         Assert.Equal(UserId.ToString(), token.Subject);
