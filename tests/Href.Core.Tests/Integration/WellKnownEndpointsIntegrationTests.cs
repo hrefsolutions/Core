@@ -6,6 +6,8 @@ using Href.Core.Tests.Modules.Auth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Href.Core.Tests.Integration;
@@ -127,6 +129,39 @@ public sealed class WellKnownEndpointsIntegrationTests(PostgresFixture postgres)
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal(Issuer, document.RootElement.GetProperty("issuer").GetString());
         Assert.Equal(Issuer + "/.well-known/jwks.json", document.RootElement.GetProperty("jwks_uri").GetString());
+    }
+
+    [Fact]
+    public async Task OpenIdDiscovery_AsUsedByJwtBearerAuthority_FindsIssuerAndKeysThatValidateACoreToken()
+    {
+        await using var factory = CreateFactory(Environments.Production);
+        using var client = factory.CreateClient();
+        var configurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+            new Uri(client.BaseAddress!, "/.well-known/openid-configuration").ToString(),
+            new OpenIdConnectConfigurationRetriever(),
+            new HttpDocumentRetriever(client) { RequireHttps = false });
+        var handler = new JsonWebTokenHandler();
+        var token = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = Issuer,
+            Audience = "satellite",
+            Expires = DateTime.UtcNow.AddMinutes(5),
+            SigningCredentials = factory.Services.GetRequiredService<JwtKeyProvider>().SigningCredentials,
+        });
+
+        var configuration = await configurationManager.GetConfigurationAsync(TestContext.Current.CancellationToken);
+        var result = await handler.ValidateTokenAsync(token, new TokenValidationParameters
+        {
+            ValidIssuer = configuration.Issuer,
+            ValidAudience = "satellite",
+            IssuerSigningKeys = configuration.SigningKeys,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+        });
+
+        Assert.Equal(Issuer, configuration.Issuer);
+        Assert.Equal(Issuer + "/.well-known/jwks.json", configuration.JwksUri);
+        Assert.Equal(["core-current", "core-previous"], configuration.SigningKeys.Select(key => key.KeyId).Order(StringComparer.Ordinal));
+        Assert.True(result.IsValid, result.Exception?.Message);
     }
 
     [Fact]

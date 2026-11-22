@@ -16,16 +16,24 @@ These must exist in Railway before the first deploy.
 | `ConnectionStrings__DefaultConnection` | Npgsql connection string to the Railway PostgreSQL service | **Secret.** The API does not start without it. Use the Npgsql key-value format, not the `postgresql://` URL that Railway shows as `DATABASE_URL`. With Railway reference variables (replace `Postgres` with the name of the database service): `Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}` |
 | `Smtp__Username` | `href.notifier@gmail.com` | Gmail account that sends the emails. Set together with `Smtp__Password`. |
 | `Smtp__Password` | Gmail App Password (16 characters) | **Secret.** An App Password of `href.notifier@gmail.com`, never the account password. Store it only in Railway. Without credentials the API starts, but every email fails and a startup warning `SMTP credentials are not configured` is logged. |
-
-| `Jwt__Issuer` | Public HTTPS base URL of the Core, for example `https://core.example.com` | Used as the token `iss` and as the base of `jwks_uri`. Absolute URL, no query or fragment; a trailing `/` is removed. `http` is rejected except for loopback hosts. |
+| `Jwt__Issuer` | Public HTTPS base URL of the Core, for example `https://core-production.up.railway.app` | Used as the token `iss` and as the base of `jwks_uri`, so satellite apps must be able to reach it. Scheme and host (optional port) only: no path, query or fragment; a trailing `/` is removed. `http` is rejected except for loopback hosts, so a private Railway address (`*.railway.internal`) is not valid. See [Public domain](#public-domain). |
 | `Jwt__SigningKey__KeyId` | Key id, for example `core-2026-11` | Published as `kid`. 1 to 64 characters among `A-Z`, `a-z`, `0-9`, `.`, `_`, `-`. Use a new id on every rotation. |
 | `Jwt__SigningKey__PrivateKeyPem` | RSA private key in PEM | **Secret.** See [JWT signing keys](#jwt-signing-keys). PKCS#8 (`BEGIN PRIVATE KEY`) or PKCS#1 (`BEGIN RSA PRIVATE KEY`), at least 2048 bits (3072 recommended), not encrypted. Paste it with its line breaks or on one line. The API does not start without it. |
 
 Outbound SMTP needs the Railway Pro plan or higher. After an upgrade, redeploy the service.
 
+## Public domain
+
+`Jwt__Issuer` needs the public HTTPS domain of the service: in Railway, Settings → Networking → Generate Domain (`https://<name>.up.railway.app`) or a custom domain. Generating it makes the service public. Do that only when the deployed version includes admin authentication (#53), which ships in v0.4.0, the same release as the `Jwt__*` variables. Before that, keep the service private, as the warning above says.
+
 ## JWT signing keys
 
-Access tokens are signed with RS256 using `Jwt__SigningKey__PrivateKeyPem`. The public keys are published at `GET /.well-known/jwks.json` (cached for 1 hour) and `GET /.well-known/openid-configuration` returns `issuer` and `jwks_uri`.
+Access tokens are signed with RS256 using `Jwt__SigningKey__PrivateKeyPem`. The public keys are published at `GET /.well-known/jwks.json`, and `GET /.well-known/openid-configuration` returns `issuer` and `jwks_uri`. Both responses send `Cache-Control: public, max-age=3600` for HTTP caches.
+
+Satellite apps that use `AddJwtBearer(options => options.Authority = ...)` do not follow that header. They keep the keys in memory and download them again:
+
+- every 12 hours (`ConfigurationManager.DefaultAutomaticRefreshInterval`, changeable with `AutomaticRefreshInterval`);
+- when a token arrives with an unknown `kid` (`RefreshOnIssuerKeyNotFound`, on by default), at most once every 5 minutes.
 
 Generate the production key pair on a trusted machine (OpenSSL is included with Git Bash):
 
@@ -41,12 +49,17 @@ Rotation (manual):
 
 1. Generate a new pair with a new key id.
 2. Move the current key to the previous keys: `Jwt__PreviousPublicKeys__0__KeyId` = the old key id and `Jwt__PreviousPublicKeys__0__PublicKeyPem` = the old public key (`BEGIN PUBLIC KEY`). Add `__1__`, `__2__`... for more. A private key there is rejected.
-3. Set the new `Jwt__SigningKey__KeyId` and `Jwt__SigningKey__PrivateKeyPem` and redeploy. New tokens use the new key; tokens signed with the old one keep validating because its public key is still published.
-4. Remove the previous key after the access token lifetime (`Jwt__AccessTokenMinutes`) plus the JWKS cache time (1 hour) of the satellite apps have passed.
+3. Set the new `Jwt__SigningKey__KeyId` and `Jwt__SigningKey__PrivateKeyPem` and redeploy. New tokens use the new key. Satellite apps download the new key the first time they see its `kid`. If a satellite downloaded the keys less than 5 minutes before, it can reject new tokens until those 5 minutes pass. Tokens signed with the old key keep validating because its public key is still published.
+4. Remove the previous key once every token signed with it has expired: `Jwt__AccessTokenMinutes` plus the clock skew of the satellites (5 minutes by default in JwtBearer) after the redeploy of step 3.
 
-If the private key leaks, rotate without step 2, so tokens signed with it stop validating at once (satellite apps may keep the old JWKS up to 1 hour).
+To avoid even those 5 minutes, publish the new public key first: add it as one more `Jwt__PreviousPublicKeys__N__*` entry (the list publishes any extra public key) and redeploy. Wait 12 hours, so that every satellite has downloaded the keys again. Then do steps 2 and 3.
 
-The API does not start with an invalid `Jwt` configuration: missing key outside Development, a PEM that cannot be imported or of the wrong kind, a key under 2048 bits, a malformed or repeated key id, an invalid issuer or lifetimes out of range. The deploy logs show which value failed, never the key.
+If the private key leaks:
+
+1. Rotate immediately, without step 2, so the leaked key is no longer published.
+2. Restart every satellite app, or have it request a refresh of the keys. A token forged with the leaked key carries a `kid` the satellite already knows, so it does not trigger a download, and the satellite keeps accepting it for up to 12 hours (the automatic refresh interval).
+
+The API does not start with an invalid `Jwt` configuration: missing key outside Development, a PEM that cannot be imported or of the wrong kind, a key under 2048 bits, a malformed or repeated key id, an invalid issuer (with a path, not `https` outside loopback) or lifetimes out of range. The deploy logs show which value failed, never the key.
 
 ## Variables not to set
 
@@ -82,8 +95,8 @@ The API does not start with an invalid `Smtp` or `Notifications:Worker` configur
 
 ## First deploy checklist
 
-1. Create the PostgreSQL service and the Href.Core service (from this repository, root `Dockerfile`), with no public domain. Set the health check path of the Href.Core service to `/health`.
-2. Set `ConnectionStrings__DefaultConnection`, `Smtp__Username`, `Smtp__Password`, `Jwt__Issuer`, `Jwt__SigningKey__KeyId` and `Jwt__SigningKey__PrivateKeyPem` (see [JWT signing keys](#jwt-signing-keys)).
+1. Create the PostgreSQL service and the Href.Core service (from this repository, root `Dockerfile`), with no public domain until the deployed version includes #53. Set the health check path of the Href.Core service to `/health`.
+2. Set `ConnectionStrings__DefaultConnection`, `Smtp__Username` and `Smtp__Password`. From v0.4.0 on, also generate the public domain (see [Public domain](#public-domain)) and set `Jwt__Issuer` to it, plus `Jwt__SigningKey__KeyId` and `Jwt__SigningKey__PrivateKeyPem` (see [JWT signing keys](#jwt-signing-keys)).
 3. Deploy. In the logs, check that:
    - DbUp applied every migration (`0000_baseline.sql` up to the last `NNNN_*.sql`);
    - the warning `SMTP credentials are not configured` does not appear.

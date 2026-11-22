@@ -50,9 +50,10 @@ public sealed class JwtOptionsValidator(IHostEnvironment environment) : IValidat
             || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
             || uri.Query.Length > 0
             || uri.Fragment.Length > 0
-            || uri.UserInfo.Length > 0)
+            || uri.UserInfo.Length > 0
+            || uri.AbsolutePath.TrimEnd('/').Length > 0)
         {
-            failures.Add("Jwt:Issuer must be the absolute http(s) base URL of the Core, without query, fragment or user info.");
+            failures.Add("Jwt:Issuer must be the absolute http(s) base URL of the Core (scheme and host, optional port), without path, query, fragment or user info.");
             return;
         }
 
@@ -68,13 +69,14 @@ public sealed class JwtOptionsValidator(IHostEnvironment environment) : IValidat
         var hasKeyId = !string.IsNullOrWhiteSpace(signingKey.KeyId);
         var hasPem = !string.IsNullOrWhiteSpace(signingKey.PrivateKeyPem);
 
+        if (!hasPem && !environment.IsDevelopment())
+        {
+            failures.Add("Jwt:SigningKey:PrivateKeyPem and Jwt:SigningKey:KeyId are required outside Development.");
+            return keyIds;
+        }
+
         if (!hasKeyId && !hasPem)
         {
-            if (!environment.IsDevelopment())
-            {
-                failures.Add("Jwt:SigningKey:PrivateKeyPem and Jwt:SigningKey:KeyId are required outside Development.");
-            }
-
             return keyIds;
         }
 

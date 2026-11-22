@@ -96,6 +96,18 @@ public sealed class JwtOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_InProductionWithKeyIdButNoPem_ReportsTheKeyAsRequired()
+    {
+        var options = ValidOptions();
+        options.SigningKey.PrivateKeyPem = string.Empty;
+
+        var result = Validate(options, Environments.Production);
+
+        Assert.True(result.Failed);
+        Assert.Contains(result.Failures!, failure => failure.Contains("required outside Development", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_SigningPemWithoutKeyId_Fails()
     {
         var options = ValidOptions();
@@ -193,6 +205,8 @@ public sealed class JwtOptionsValidatorTests
     [InlineData("https://core.example.com?tenant=1")]
     [InlineData("https://core.example.com#fragment")]
     [InlineData("https://user:secret@core.example.com")]
+    [InlineData("https://core.example.com/core")]
+    [InlineData("https://core.example.com/core/")]
     public void Validate_InvalidIssuer_Fails(string issuer)
     {
         var options = ValidOptions();
@@ -223,6 +237,19 @@ public sealed class JwtOptionsValidatorTests
         var result = Validate(options, Environments.Development);
 
         Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("https://core.example.com/")]
+    [InlineData("https://core.example.com:8443")]
+    public void Validate_HttpsIssuerWithoutPath_Succeeds(string issuer)
+    {
+        var options = ValidOptions();
+        options.Issuer = issuer;
+
+        var result = Validate(options, Environments.Production);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
     }
 
     [Theory]

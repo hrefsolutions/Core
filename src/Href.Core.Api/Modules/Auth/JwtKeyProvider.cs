@@ -16,11 +16,19 @@ public sealed class JwtKeyProvider : IDisposable
     public const int EphemeralKeySizeInBits = 3072;
     public const string EphemeralKeyIdPrefix = "ephemeral-";
 
-    private readonly List<RSA> _keys = [];
+    private readonly RSA _signingRsa;
 
     public JwtKeyProvider(IOptions<JwtOptions> options, IHostEnvironment environment)
     {
         var jwt = options.Value;
+        var previousKeys = new List<PublicJsonWebKey>();
+
+        foreach (var previous in jwt.PreviousPublicKeys)
+        {
+            using var rsa = Import(previous.PublicKeyPem, expectPrivateKey: false);
+            previousKeys.Add(ToPublicJsonWebKey(previous.KeyId!, rsa));
+        }
+
         RSA signingRsa;
 
         if (string.IsNullOrWhiteSpace(jwt.SigningKey.PrivateKeyPem))
@@ -40,7 +48,7 @@ public sealed class JwtKeyProvider : IDisposable
             CurrentKeyId = jwt.SigningKey.KeyId!;
         }
 
-        _keys.Add(signingRsa);
+        _signingRsa = signingRsa;
         var cryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false };
         SigningCredentials = new SigningCredentials(
             new RsaSecurityKey(signingRsa) { KeyId = CurrentKeyId, CryptoProviderFactory = cryptoProviderFactory },
@@ -49,16 +57,7 @@ public sealed class JwtKeyProvider : IDisposable
             CryptoProviderFactory = cryptoProviderFactory,
         };
 
-        var publicKeys = new List<PublicJsonWebKey> { ToPublicJsonWebKey(CurrentKeyId, signingRsa) };
-
-        foreach (var previous in jwt.PreviousPublicKeys)
-        {
-            var rsa = Import(previous.PublicKeyPem, expectPrivateKey: false);
-            _keys.Add(rsa);
-            publicKeys.Add(ToPublicJsonWebKey(previous.KeyId!, rsa));
-        }
-
-        JsonWebKeySet = new JsonWebKeySetResponse(publicKeys);
+        JsonWebKeySet = new JsonWebKeySetResponse([ToPublicJsonWebKey(CurrentKeyId, signingRsa), .. previousKeys]);
     }
 
     public string CurrentKeyId { get; }
@@ -69,13 +68,7 @@ public sealed class JwtKeyProvider : IDisposable
 
     public JsonWebKeySetResponse JsonWebKeySet { get; }
 
-    public void Dispose()
-    {
-        foreach (var key in _keys)
-        {
-            key.Dispose();
-        }
-    }
+    public void Dispose() => _signingRsa.Dispose();
 
     private static RSA Import(string? pem, bool expectPrivateKey) =>
         RsaPemKeys.TryImport(pem, expectPrivateKey, out var error)
