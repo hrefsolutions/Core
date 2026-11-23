@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.4.0 - 2026-11-23
+
 ### Agregado
 
 - Autenticación de los endpoints de admin con JWT (#53):
@@ -96,6 +98,12 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
   - **Push a `develop`:** el CI también corre en cada push, no solo en `main`.
 - CodeQL (`.github/workflows/codeql.yml`): análisis `security-extended` de C# en cada PR, en cada push a `main` y `develop`, y todos los lunes.
 - `docs/branch-protection.md`: las reglas de protección de `main` y `develop` (checks requeridos, sin push directo, CodeQL bloqueante) y los comandos `gh` para aplicarlas. Son configuración del repositorio y las aplica un admin.
+- Protección de ramas aplicada (2026-11-23):
+  - `main` exige un PR y los checks `repository-rules`, `release-rules`, `build-and-test`, `docker` y `analyze`. Prohíbe el push directo, el force push y el borrado, también para el admin.
+  - `develop` exige un PR y los checks `repository-rules`, `build-and-test` y `docker`.
+  - Ninguna de las dos exige la rama actualizada, porque `main` acumula un merge por release.
+  - Como `develop` ya no acepta push directo, el commit de release pasa por un PR `chore/release-vX.Y.Z`.
+  - El bloqueo por alertas de CodeQL queda pendiente en la web.
 
 ## 0.3.0 - 2026-11-19
 

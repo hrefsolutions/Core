@@ -61,7 +61,7 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 - En inglés, Conventional Commits: `type(scope): subject`. Ej.: `feat(api): add customer endpoint`, `fix(persistence): handle null audit timestamp`.
 - Scopes sugeridos: `api`, `persistence`, `domain`, `infra`, `deps`, `ci`.
 - Sin `Co-Authored-By: Claude` ni otros trailers de atribución.
-- Los commits de release van directo a `develop` con el mensaje `chore: release vX.Y.Z`.
+- El commit de release (`chore: release vX.Y.Z`: sube `<Version>` y cierra la sección del CHANGELOG) va en un PR `chore/release-vX.Y.Z` → `develop`, porque `develop` está protegida y no acepta push directo. Después se abre el PR `develop` → `main`.
 
 ## Pull requests
 
@@ -112,7 +112,10 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
     - `dotnet test --blame-hang-timeout 5m` con resultados TRX. Si falla, se suben `TestResults/` y los dumps como artifact.
   - `docker`: `docker build` de la imagen que construye Railway y **escaneo con Trivy** (HIGH/CRITICAL con fix disponible): bloquea hacia `main`, y en `develop` solo avisa.
 - CodeQL (`.github/workflows/codeql.yml`): análisis `security-extended` de C# en cada PR, en cada push a `main` y `develop`, y todos los lunes. Los resultados quedan en la pestaña Security del repo.
-- Protección de `main` (configuración del repo, no del código): requiere PR, los checks de CI y CodeQL, y nada de push directo. Cómo configurarla: `docs/branch-protection.md`.
+- Protección de ramas (configuración del repo, aplicada el 2026-11-23, ver `docs/branch-protection.md`):
+  - `main` (producción) exige un PR y los checks `repository-rules`, `release-rules`, `build-and-test`, `docker` y `analyze`. Prohíbe el push directo, el force push y el borrado, y las reglas valen también para el admin.
+  - `develop` exige un PR y los checks `repository-rules`, `build-and-test` y `docker`.
+  - Ninguna de las dos exige la rama actualizada, porque `main` acumula los merges de cada release y el CI del PR ya corre sobre el resultado del merge.
 - La imagen Docker la construye Railway.
 - Claude no corre build, test ni lint en local: indica qué comando correr y el usuario le pasa el resultado.
 - Tests de integración (`tests/Href.Core.Tests/Integration/`):
@@ -160,7 +163,7 @@ Errores que ya pasaron en este repo (revisión de v0.1.0, PR #67):
 
 - Se agrupan varios issues por release, no uno por PR. Antes de abrir un release, Claude pregunta qué bloque va.
 - El PR de release `develop` → `main`:
-  - sube `<Version>` en `Href.Core.Api.csproj` según el cambio más grande (semver);
+  - lleva el commit de release del PR `chore/release-vX.Y.Z` ya mergeado en `develop`, que sube `<Version>` en `Href.Core.Api.csproj` según el cambio más grande (semver);
   - renombra `## Próxima versión` a `## X.Y.Z - AAAA-MM-DD` en `CHANGELOG.md` y deja una `## Próxima versión` vacía arriba;
   - lista en orden todos los pasos manuales (migraciones/SQL, variables de entorno en Railway, otros).
 - Después del merge: GitHub release con tag `vX.Y.Z` en el commit de merge y la sección del CHANGELOG como notas.
