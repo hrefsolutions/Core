@@ -58,6 +58,7 @@ try
     builder.Services.AddScoped<RoleAdminService>();
     builder.Services.AddScoped<ApplicationAccessService>();
     builder.Services.AddScoped<AuthService>();
+    builder.Services.AddScoped<UserSessionsService>();
     builder.Services.AddSingleton<DummyPasswordHash>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
