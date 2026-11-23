@@ -14,7 +14,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task CreateAndGetByAppKey_Returns201WithOneTimeSecretAnd200WithoutSecretHash()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"crm-{Guid.NewGuid():N}"[..20];
 
         var createResponse = await client.PostAsJsonAsync(
@@ -54,7 +54,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task Create_WhenAppKeyAlreadyExists_Returns409ConflictProblemDetails()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"dup-{Guid.NewGuid():N}"[..20];
 
         var first = await client.PostAsJsonAsync(
@@ -78,7 +78,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task Create_WhenSameAppKeyIsPostedConcurrently_ReturnsOneCreatedAndOnlyConflicts()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"race-{Guid.NewGuid():N}"[..20];
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => client.PostAsJsonAsync(
@@ -96,7 +96,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task UpdateStatus_WithNumericValue_Returns400AndKeepsStatus()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"num-{Guid.NewGuid():N}"[..20];
 
         await client.PostAsJsonAsync(
@@ -123,7 +123,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task Create_WhenAppKeyHasInvalidSlugFormat_Returns400BadRequest()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
 
         var response = await client.PostAsJsonAsync(
             "/api/apps",
@@ -140,7 +140,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task List_ReturnsApplicationsOrderedByName()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var prefix = $"ord-{Guid.NewGuid():N}"[..10];
         var zuluKey = $"{prefix}-zulu";
         var alphaKey = $"{prefix}-alpha";
@@ -167,7 +167,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task UpdateAndStatusAndRotateSecret_ModifiesEntityAndInvalidatesOldSecret()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"flow-{Guid.NewGuid():N}"[..20];
 
         var createResponse = await client.PostAsJsonAsync(
@@ -228,7 +228,7 @@ public sealed class ApplicationsEndpointIntegrationTests(PostgresFixture postgre
     public async Task Endpoints_WhenAppKeyDoesNotExist_Return404NotFound()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var missingKey = $"missing-{Guid.NewGuid():N}"[..20];
 
         var getResponse = await client.GetAsync($"/api/apps/{missingKey}", TestContext.Current.CancellationToken);

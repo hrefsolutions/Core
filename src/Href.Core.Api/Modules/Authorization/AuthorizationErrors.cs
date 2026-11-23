@@ -4,6 +4,10 @@ namespace Href.Core.Api.Modules.Authorization;
 
 public static class AuthorizationErrors
 {
+    public static readonly Error Reserved = Error.Conflict(
+        "Authorization.Reserved",
+        "The core.admin permission and the admin role of the core application cannot be deleted, and the admin role must keep core.admin.");
+
     public static readonly Error InvalidPermissionKey = Error.Validation(
         "Authorization.InvalidPermissionKey",
         "The permission key must be lowercase letters and digits separated by '.', '_', ':' or '-' (up to 100 characters).");

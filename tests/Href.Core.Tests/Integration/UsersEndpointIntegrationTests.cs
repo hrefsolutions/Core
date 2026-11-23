@@ -21,7 +21,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Create_Returns201WithVerifiedActiveUserAndRecordsSafeAuditRow()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var email = UniqueEmail("create");
 
@@ -48,7 +48,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
         var auditRow = Assert.Single(await AuditRowsAsync(created.Id));
         Assert.Equal(AuditActions.UserCreated, auditRow.Action);
         Assert.Equal(UserAuditing.EntityType, auditRow.EntityType);
-        Assert.Equal(AuditActorType.Anonymous, auditRow.ActorType);
+        Assert.Equal(AuditActorType.User, auditRow.ActorType);
         Assert.Null(auditRow.OldValues);
         Assert.Equal(email, Parse(auditRow.NewValues).GetProperty("email").GetString());
         AssertNoSecrets(auditRow.NewValues!);
@@ -59,7 +59,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Create_WithEmailTakenInOtherCase_Returns409()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var email = UniqueEmail("dup");
         await CreateUserAsync(client, email, "First");
 
@@ -75,7 +75,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Create_WhenSameEmailIsPostedConcurrently_ReturnsOneCreatedAndOnlyConflicts()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var email = UniqueEmail("race");
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => client.PostAsJsonAsync(
@@ -98,7 +98,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Create_WithInvalidInput_Returns400AndCreatesNothing(string? email, string? fullName, string? password, string errorCode)
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var uniqueEmail = email == "valid@example.com" ? UniqueEmail("invalid") : email;
 
         var response = await client.PostAsJsonAsync(
@@ -121,7 +121,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task List_FiltersBySearchAndStatusAndPages()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var tag = $"lst{Guid.NewGuid():N}"[..14];
         var alpha = await CreateUserAsync(client, $"{tag}-a@example.com", "Alpha Person");
@@ -158,7 +158,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task List_TreatsLikeWildcardsInSearchLiterally()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var tag = $"wc{Guid.NewGuid():N}"[..14];
         var underscore = await CreateUserAsync(client, $"{tag}_x@example.com", "Underscore");
         await CreateUserAsync(client, $"{tag}ax@example.com", "Letter");
@@ -180,7 +180,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task List_WithInvalidQuery_Returns400(string query, string errorCode)
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
 
         var response = await client.GetAsync($"/api/users{query}", TestContext.Current.CancellationToken);
 
@@ -194,7 +194,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task GetById_IncludesApplicationsWithSortedRoles()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var user = await CreateUserAsync(client, UniqueEmail("detail"), "Detail");
         var zetaApp = Application.Create($"zz-{Guid.NewGuid():N}"[..20], "Zeta App", null, false, TimeProvider.System).Value.Application;
@@ -223,7 +223,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task UnknownUser_Returns404OnEveryRoute()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var id = Guid.CreateVersion7();
 
@@ -240,7 +240,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Update_NameOnly_KeepsVerificationAndRecordsUserUpdated()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var email = UniqueEmail("upd");
         var user = await CreateUserAsync(client, email, "Old Name");
 
@@ -265,7 +265,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Update_WithNewEmail_ClearsVerificationRegeneratesStampAndRecordsEmailChanged()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var user = await CreateUserAsync(client, UniqueEmail("chg"), "Ana");
         var stampBefore = (await LoadUserAsync(user.Id)).SecurityStamp;
         var newEmail = UniqueEmail("new");
@@ -294,7 +294,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Update_WithoutChanges_Returns200AndRecordsNothing()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var user = await CreateUserAsync(client, UniqueEmail("same"), "Same");
 
         var response = await client.PutAsJsonAsync(
@@ -310,7 +310,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Update_WithEmailOfAnotherUser_Returns409AndKeepsBothUsers()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var first = await CreateUserAsync(client, UniqueEmail("first"), "First");
         var second = await CreateUserAsync(client, UniqueEmail("second"), "Second");
 
@@ -334,7 +334,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Update_WithInvalidInput_Returns400AndChangesNothing(string? email, string? fullName, string errorCode)
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var user = await CreateUserAsync(client, UniqueEmail("inv"), "Original");
 
         var response = await client.PutAsJsonAsync(
@@ -356,7 +356,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task LockAndUnlock_ChangeStatusRegenerateStampAndRecordAuditRows()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var user = await CreateUserAsync(client, UniqueEmail("lock"), "Lockable");
         var stampBefore = (await LoadUserAsync(user.Id)).SecurityStamp;
@@ -404,7 +404,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Lock_WithEmptyBody_LocksWithoutReason()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var user = await CreateUserAsync(client, UniqueEmail("nobody"), "No Body");
 
         var response = await client.PostAsync($"/api/users/{user.Id}/lock", EmptyJsonBody(), TestContext.Current.CancellationToken);
@@ -420,7 +420,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task Lock_WithTooLongReason_Returns400AndKeepsUserActive()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var user = await CreateUserAsync(client, UniqueEmail("long"), "Long Reason");
 
         var response = await client.PostAsJsonAsync(
@@ -436,7 +436,7 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
     public async Task UsersRoutes_DoNotExposeDelete()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var user = await CreateUserAsync(client, UniqueEmail("nodelete"), "No Delete");
 
         var response = await client.DeleteAsync($"/api/users/{user.Id}", TestContext.Current.CancellationToken);

@@ -1,4 +1,5 @@
 using Href.Core.Api.Common.Results;
+using Href.Core.Api.Modules.Auth;
 using NHibernate.Linq;
 using Npgsql;
 using ISession = NHibernate.ISession;
@@ -132,6 +133,11 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
             return ApplicationErrors.NotFound;
         }
 
+        if (request.AllowSelfRegistration && application.Id == CoreApplication.Id)
+        {
+            return ApplicationErrors.Reserved;
+        }
+
         var updateResult = application.Update(request.Name, request.Description, request.AllowSelfRegistration);
 
         if (updateResult.IsFailure)
@@ -162,6 +168,11 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
         if (application is null)
         {
             return ApplicationErrors.NotFound;
+        }
+
+        if (targetStatus == ApplicationStatus.Suspended && application.Id == CoreApplication.Id)
+        {
+            return ApplicationErrors.Reserved;
         }
 
         var statusResult = targetStatus switch

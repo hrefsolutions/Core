@@ -62,7 +62,7 @@ public sealed class NotificationsEndpointIntegrationTests(PostgresFixture postgr
 
     private async Task<TestApp> CreateAppAsync()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateAdminClient();
         var appKey = UniqueKey("notif");
         var response = await client.PostAsJsonAsync(
             "/api/apps",
@@ -1025,7 +1025,7 @@ public sealed class NotificationsEndpointIntegrationTests(PostgresFixture postgr
     public async Task Endpoints_ForSuspendedApplication_Return403()
     {
         var app = await CreateAppAsync();
-        using (var client = _factory.CreateClient())
+        using (var client = _factory.CreateAdminClient())
         {
             var suspend = await client.PatchAsJsonAsync(
                 $"/api/apps/{app.AppKey}/status",
