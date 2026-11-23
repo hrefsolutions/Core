@@ -4,6 +4,22 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Agregado
+
+- Registro propio y verificación de email (#26). Los llama el backend satélite con sus credenciales M2M:
+  - **`POST /api/auth/register`:**
+    - solo para aplicaciones con `AllowSelfRegistration`; si no, `403 Auth.SelfRegistrationDisabled`, y `core` nunca lo tiene;
+    - crea el usuario sin verificar, con acceso a la aplicación con su rol por defecto (o sin roles si no tiene uno);
+    - encola la plantilla `verify-email` con un link válido por 24 h y audita `USER_REGISTERED` y `ACCESS_GRANTED`, todo en una transacción;
+    - un email repetido, en cualquier aplicación y sin importar mayúsculas, devuelve `409 Auth.EmailAlreadyRegistered`, también con requests simultáneos.
+  - **`POST /api/auth/verify-email`:** consume el token, verifica el email, audita `EMAIL_VERIFIED` y encola `welcome-user`.
+    - Un token usado, vencido, revocado, de otra aplicación o de otro propósito devuelve `400 Auth.InvalidOneTimeToken`. Es un código nuevo, distinto del `401 Auth.InvalidToken` de admin.
+    - Dos usos simultáneos del mismo token dan un `204` y un `400`.
+  - **`POST /api/auth/resend-verification`:** responde siempre `202` y solo envía si el usuario existe, está activo, no está verificado y tiene acceso a la aplicación. Revoca los tokens de verificación anteriores.
+  - **URLs de las páginas** (`verifyEmailUrl`): se validan antes de ponerlas en un email firmado por el Core. Tienen que ser `https` (`http` solo en localhost), sin usuario ni contraseña, sin fragmento, de hasta 2048 caracteres y sin un parámetro `token` propio. Si no, devuelven `400 Auth.InvalidCallbackUrl`.
+  - **Entidad `UserToken`** y migración `0009_create_user_tokens.sql`: tokens de un solo uso atados al usuario y a la aplicación; se guarda solo su SHA-256. Queda lista para el reset de contraseña de #27.
+  - **Limitación conocida:** el cuerpo del email encolado, con el link y el token, queda en texto plano en `notifications` hasta que se limpie. Borrar esos cuerpos después del envío queda como mejora a futuro.
+
 ## 0.4.0 - 2026-11-23
 
 ### Agregado

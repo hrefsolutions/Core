@@ -4,6 +4,14 @@ public sealed record LoginRequest(string? Email, string? Password);
 
 public sealed record RefreshRequest(string? RefreshToken);
 
+public sealed record RegisterRequest(string? Email, string? Password, string? FullName, string? VerifyEmailUrl);
+
+public sealed record RegisterResponse(Guid UserId);
+
+public sealed record VerifyEmailRequest(string? Token);
+
+public sealed record ResendVerificationRequest(string? Email, string? VerifyEmailUrl);
+
 public sealed record TokenResponse(
     string AccessToken,
     string TokenType,

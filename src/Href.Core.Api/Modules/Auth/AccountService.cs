@@ -1,0 +1,280 @@
+using System.Globalization;
+using Href.Core.Api.Common.Persistence;
+using Href.Core.Api.Common.Results;
+using Href.Core.Api.Modules.Applications;
+using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Authorization;
+using Href.Core.Api.Modules.Notifications;
+using Href.Core.Api.Modules.Users;
+using Microsoft.AspNetCore.Identity;
+using NHibernate.Linq;
+using ISession = NHibernate.ISession;
+
+namespace Href.Core.Api.Modules.Auth;
+
+/// <summary>
+/// Self-service account flows called by satellite backends with their M2M credentials: registration, email verification
+/// and resending the verification email. Emails are queued through <see cref="NotificationService"/> inside the same
+/// transaction as the account change, so a failure leaves neither the change nor the email.
+/// </summary>
+public sealed class AccountService(
+    ISession session,
+    IPasswordHasher<User> passwordHasher,
+    NotificationService notificationService,
+    IAuditService auditService,
+    TimeProvider timeProvider)
+{
+    public const string VerifyEmailTemplateKey = "verify-email";
+    public const string WelcomeUserTemplateKey = "welcome-user";
+
+    /// <summary>
+    /// Registers a user for the calling application: the user is created unverified, gets access with the application's
+    /// default role (no role if there is none) and receives the <c>verify-email</c> email with a 24 h token.
+    /// </summary>
+    public async Task<Result<RegisterResponse>> RegisterAsync(
+        Guid applicationId,
+        string appKey,
+        RegisterRequest request,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var application = await session.GetAsync<Application>(applicationId, cancellationToken);
+
+        if (application is null || !application.AllowSelfRegistration)
+        {
+            return AuthErrors.SelfRegistrationDisabled;
+        }
+
+        if (!CallbackUrl.TryParse(request.VerifyEmailUrl, out var verifyEmailUrl))
+        {
+            return AuthErrors.InvalidCallbackUrl;
+        }
+
+        var created = User.Create(request.Email, request.FullName, request.Password, passwordHasher);
+
+        if (created.IsFailure)
+        {
+            return created.Error;
+        }
+
+        var user = created.Value;
+
+        try
+        {
+            using var transaction = session.BeginTransaction();
+
+            if (await session.Query<User>().AnyAsync(existing => existing.Email == user.Email, cancellationToken))
+            {
+                return AuthErrors.EmailAlreadyRegistered;
+            }
+
+            var defaultRole = await session.Query<Role>()
+                .SingleOrDefaultAsync(role => role.ApplicationId == applicationId && role.IsDefault, cancellationToken);
+            var roles = defaultRole is null ? Array.Empty<Role>() : new[] { defaultRole };
+            var access = UserApplicationAccess.Grant(user.Id, applicationId, roles).Value;
+            var issued = UserToken.Issue(
+                user.Id,
+                applicationId,
+                UserTokenPurpose.EmailVerification,
+                timeProvider.GetUtcNow().UtcDateTime,
+                UserToken.EmailVerificationLifetime);
+
+            await session.SaveAsync(user, cancellationToken);
+            await session.SaveAsync(access, cancellationToken);
+            await session.SaveAsync(issued.Token, cancellationToken);
+            await auditService.RecordUserChangeAsync(AuditActions.UserRegistered, null, UserAuditSnapshot.From(user), cancellationToken);
+            await auditService.RecordAccessChangeAsync(AuditActions.AccessGranted, appKey, null, AccessAuditSnapshot.From(access), cancellationToken);
+
+            var queued = await QueueVerificationEmailAsync(appKey, application, user, verifyEmailUrl, issued.PlainToken, correlationId, cancellationToken);
+
+            if (queued.IsFailure)
+            {
+                return queued.Error;
+            }
+
+            await session.FlushAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (Exception exception) when (PostgresErrors.IsUniqueViolation(exception, User.EmailUniqueIndexName))
+        {
+            return AuthErrors.EmailAlreadyRegistered;
+        }
+
+        return new RegisterResponse(user.Id);
+    }
+
+    /// <summary>
+    /// Verifies the email of the token's user and consumes the token. The token must be an email verification token of
+    /// the calling application; it is locked (<c>FOR UPDATE</c>) so two concurrent uses cannot both succeed. A user that
+    /// was already verified only gets the token consumed; otherwise <c>EMAIL_VERIFIED</c> is recorded and
+    /// <c>welcome-user</c> is queued.
+    /// </summary>
+    public async Task<Result> VerifyEmailAsync(
+        Guid applicationId,
+        string appKey,
+        VerifyEmailRequest request,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var tokenHash = UserToken.HashToken(request.Token);
+
+        if (tokenHash is null)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        var tokenId = await session.Query<UserToken>()
+            .Where(candidate => candidate.TokenHash == tokenHash
+                && candidate.ApplicationId == applicationId
+                && candidate.Purpose == UserTokenPurpose.EmailVerification)
+            .Select(candidate => (Guid?)candidate.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (tokenId is null)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        var token = await session.GetAsync<UserToken>(tokenId.Value, NHibernate.LockMode.Upgrade, cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var consumed = token.Consume(now);
+
+        if (consumed.IsFailure)
+        {
+            return consumed.Error;
+        }
+
+        var user = await session.GetAsync<User>(token.UserId, NHibernate.LockMode.Upgrade, cancellationToken);
+
+        if (user.EmailVerifiedAtUtc is null)
+        {
+            var before = UserAuditSnapshot.From(user);
+            user.MarkEmailVerified(now);
+            await auditService.RecordUserChangeAsync(AuditActions.EmailVerified, before, UserAuditSnapshot.From(user), cancellationToken);
+
+            var application = await session.GetAsync<Application>(applicationId, cancellationToken);
+            var welcome = await notificationService.QueueTemplateAsync(
+                appKey,
+                new EmailRecipientRequest(user.Email, user.FullName),
+                WelcomeUserTemplateKey,
+                new Dictionary<string, string> { ["UserName"] = user.FullName, ["AppName"] = application.Name },
+                notifyOnFailureTo: null,
+                correlationId,
+                cancellationToken);
+
+            if (welcome.IsFailure)
+            {
+                return welcome.Error;
+            }
+        }
+
+        await session.FlushAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Sends a new verification email and revokes the previous verification tokens of the user. The caller always answers
+    /// 202: nothing is sent when the email is unknown, the user is locked or already verified, or has no access to the
+    /// calling application. Only an invalid page URL is reported, because it does not depend on the user.
+    /// </summary>
+    public async Task<Result> ResendVerificationAsync(
+        Guid applicationId,
+        string appKey,
+        ResendVerificationRequest request,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!CallbackUrl.TryParse(request.VerifyEmailUrl, out var verifyEmailUrl))
+        {
+            return AuthErrors.InvalidCallbackUrl;
+        }
+
+        var email = User.NormalizeEmail(request.Email);
+
+        if (email.IsFailure)
+        {
+            return Result.Success();
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        var userId = await session.Query<User>()
+            .Where(candidate => candidate.Email == email.Value)
+            .Select(candidate => (Guid?)candidate.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (userId is null)
+        {
+            return Result.Success();
+        }
+
+        var user = await session.GetAsync<User>(userId.Value, NHibernate.LockMode.Upgrade, cancellationToken);
+        var hasAccess = await session.Query<UserApplicationAccess>()
+            .AnyAsync(access => access.UserId == user.Id && access.ApplicationId == applicationId, cancellationToken);
+
+        if (user.Status != UserStatus.Active || user.EmailVerifiedAtUtc is not null || !hasAccess)
+        {
+            return Result.Success();
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var previous = await session.Query<UserToken>()
+            .Where(token => token.UserId == user.Id
+                && token.Purpose == UserTokenPurpose.EmailVerification
+                && token.ConsumedAtUtc == null
+                && token.RevokedAtUtc == null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var token in previous)
+        {
+            token.Revoke(now);
+        }
+
+        var issued = UserToken.Issue(user.Id, applicationId, UserTokenPurpose.EmailVerification, now, UserToken.EmailVerificationLifetime);
+        await session.SaveAsync(issued.Token, cancellationToken);
+
+        var application = await session.GetAsync<Application>(applicationId, cancellationToken);
+        var queued = await QueueVerificationEmailAsync(appKey, application, user, verifyEmailUrl, issued.PlainToken, correlationId, cancellationToken);
+
+        if (queued.IsFailure)
+        {
+            return queued.Error;
+        }
+
+        await session.FlushAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    private Task<Result<Notification>> QueueVerificationEmailAsync(
+        string appKey,
+        Application application,
+        User user,
+        Uri verifyEmailUrl,
+        string plainToken,
+        string? correlationId,
+        CancellationToken cancellationToken) =>
+        notificationService.QueueTemplateAsync(
+            appKey,
+            new EmailRecipientRequest(user.Email, user.FullName),
+            VerifyEmailTemplateKey,
+            new Dictionary<string, string>
+            {
+                ["UserName"] = user.FullName,
+                ["AppName"] = application.Name,
+                ["VerificationUrl"] = CallbackUrl.WithToken(verifyEmailUrl, plainToken),
+                ["ExpiresInHours"] = ((int)UserToken.EmailVerificationLifetime.TotalHours).ToString(CultureInfo.InvariantCulture),
+            },
+            notifyOnFailureTo: null,
+            correlationId,
+            cancellationToken);
+}
