@@ -110,6 +110,69 @@ public sealed class AuthService(
     }
 
     /// <summary>
+    /// Ends the session of a refresh token of the calling application: its whole family is revoked as
+    /// <see cref="RefreshTokenRevocationReason.Logout"/> and <c>LOGOUT</c> is recorded. A token that was already rotated
+    /// is a reuse, handled like in <see cref="RefreshAsync"/> (<c>ReuseDetected</c>, <c>REFRESH_TOKEN_REUSE_DETECTED</c>).
+    /// A missing, unknown or foreign token and a family without an active token change nothing; the caller always
+    /// answers 204, so the response says nothing about the token.
+    /// </summary>
+    public async Task LogoutAsync(Guid applicationId, RefreshRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var tokenHash = RefreshToken.HashToken(request.RefreshToken);
+
+        if (tokenHash is null)
+        {
+            return;
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        var owner = await session.Query<RefreshToken>()
+            .Where(candidate => candidate.TokenHash == tokenHash && candidate.ApplicationId == applicationId)
+            .Select(candidate => new { candidate.UserId, candidate.FamilyId })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (owner is null)
+        {
+            return;
+        }
+
+        await LockUserTokensAsync(owner.UserId, cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var family = await session.Query<RefreshToken>()
+            .Where(candidate => candidate.FamilyId == owner.FamilyId)
+            .ToListAsync(cancellationToken);
+        var presented = family.Single(candidate => candidate.TokenHash == tokenHash);
+
+        if (presented.RevokedReason == RefreshTokenRevocationReason.Rotated)
+        {
+            await RevokeFamilyAfterReuseAsync(presented, now, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
+
+        if (!family.Any(candidate => candidate.IsActive(now)))
+        {
+            return;
+        }
+
+        var revokedCount = RefreshToken.RevokeFamily(family, now, RefreshTokenRevocationReason.Logout);
+
+        await auditService.RecordAsync(
+            new AuditEntry(
+                AuditActions.Logout,
+                EntityType: RefreshTokenFamilyEntityType,
+                EntityId: owner.FamilyId.ToString(),
+                NewValues: new LogoutAuditSnapshot(owner.UserId, owner.FamilyId, revokedCount),
+                ActorTypeOverride: AuditActorType.User,
+                ActorIdOverride: owner.UserId.ToString()),
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Rotates a refresh token of the calling application and issues a new access token with the roles and permissions
     /// read again. A token of another application is treated as unknown. A rotated token presented again is a reuse:
     /// the whole family is revoked as <see cref="RefreshTokenRevocationReason.ReuseDetected"/> and audited.
@@ -238,8 +301,5 @@ public sealed class AuthService(
     }
 
     private Task LockUserTokensAsync(Guid userId, CancellationToken cancellationToken) =>
-        session.CreateSQLQuery("SELECT 1 FROM pg_advisory_xact_lock(hashtextextended('refresh_tokens:' || :userId, 0))")
-            .SetParameter("userId", userId.ToString())
-            .UniqueResultAsync(cancellationToken);
-
+        RefreshTokenWrites.LockUserAsync(session, userId, cancellationToken);
 }

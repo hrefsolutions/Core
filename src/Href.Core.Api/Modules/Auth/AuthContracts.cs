@@ -38,3 +38,29 @@ public sealed record LoginAuditSnapshot(Guid UserId, string Email, Guid RefreshT
 /// Audit snapshot of a refresh token reuse; never contains tokens or hashes.
 /// </summary>
 public sealed record RefreshTokenReuseAuditSnapshot(Guid UserId, Guid FamilyId, int RevokedCount);
+
+/// <summary>
+/// Audit snapshot of a logout; never contains tokens or hashes.
+/// </summary>
+public sealed record LogoutAuditSnapshot(Guid UserId, Guid FamilyId, int RevokedCount);
+
+/// <summary>
+/// Audit snapshot of a bulk session revocation (admin or user lock). <c>AppKey</c> is <c>null</c> when every application was included.
+/// </summary>
+public sealed record SessionsRevokedAuditSnapshot(Guid UserId, string? AppKey, string Reason, int RevokedSessions);
+
+/// <summary>
+/// One active session (refresh token family) of a user: when it started, when its current token was issued, and the
+/// caller recorded on that token.
+/// </summary>
+public sealed record UserSessionResponse(
+    Guid FamilyId,
+    Guid ApplicationId,
+    string AppKey,
+    DateTime StartedAtUtc,
+    DateTime LastRotatedAtUtc,
+    DateTime ExpiresAtUtc,
+    string? IpAddress,
+    string? UserAgent);
+
+public sealed record RevokeSessionsResponse(int RevokedSessions);

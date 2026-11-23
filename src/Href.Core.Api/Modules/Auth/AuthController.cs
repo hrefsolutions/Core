@@ -44,6 +44,21 @@ public sealed class AuthController(AuthService authService) : ControllerBase
         return ToTokenResult(result);
     }
 
+    /// <summary>
+    /// Ends the session of a refresh token of the calling application. Always 204, whether or not the token was known.
+    /// </summary>
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout([FromBody] RefreshRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetApplication(out var applicationId, out _))
+        {
+            return AppKeyAuthentication.InvalidCredentialsError.ToProblem(this);
+        }
+
+        await authService.LogoutAsync(applicationId, request, cancellationToken);
+        return NoContent();
+    }
+
     private IActionResult ToTokenResult(Result<TokenResponse> result)
     {
         Response.Headers.CacheControl = "no-store";
