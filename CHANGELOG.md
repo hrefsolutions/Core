@@ -10,9 +10,12 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - `GET /.well-known/jwks.json` (anónimo): publica las claves públicas (la actual primero y después las anteriores) con su `kid`, solo `n` y `e`, con `Cache-Control: public, max-age=3600`. Un token firmado con la clave actual valida contra el JWK publicado y uno firmado con otra clave no.
 - `GET /.well-known/openid-configuration` (anónimo): devuelve solo `issuer` y `jwks_uri`, para que las aplicaciones satélite usen `AddJwtBearer(o => o.Authority = ...)` sin código propio (un test recorre el mismo descubrimiento que usa JwtBearer y valida un token del Core con las claves que encuentra).
 - Logout y revocación de sesiones (#25):
-  - **`POST /api/auth/logout` (M2M):** revoca toda la familia del refresh token como `Logout` y audita `LOGOUT`. Responde siempre `204`: un token vacío, desconocido, de otra aplicación o ya revocado no cambia nada, y un segundo logout no audita. Las demás sesiones del usuario siguen activas.
+  - **`POST /api/auth/logout` (M2M):** revoca toda la familia del refresh token como `Logout` y audita `LOGOUT`.
+    - Responde `204` para cualquier token: uno vacío, desconocido, de otra aplicación, ya revocado o de una familia sin tokens activos no cambia nada, y un segundo logout no audita.
+    - Un token ya rotado cuenta como reuso, igual que en el refresh: la familia se revoca como `ReuseDetected` y se audita `REFRESH_TOKEN_REUSE_DETECTED`.
+    - Las demás sesiones del usuario siguen activas.
   - **`GET /api/users/{id}/sessions`:** lista las sesiones activas con la aplicación, el inicio, la última rotación, el vencimiento, la IP y el user agent.
-  - **`DELETE /api/users/{id}/sessions?appKey=`:** revoca todas las sesiones, o las de una aplicación, como `AdminRevoked`, audita `SESSIONS_REVOKED` y responde `200 { revokedSessions }`.
+  - **`DELETE /api/users/{id}/sessions?appKey=`:** revoca todas las sesiones, o las de una aplicación, como `AdminRevoked`, audita `SESSIONS_REVOKED` y responde `200 { revokedSessions }`. Un `appKey` presente pero vacío devuelve `404` y nunca revoca todas.
   - Estos dos endpoints de admin quedan públicos hasta #53.
   - **Bloqueo de un usuario:** ahora revoca sus sesiones como `UserLocked` en la misma transacción.
   - **Concurrencia:** todas las escrituras de refresh tokens usan el mismo lock por usuario. El bloqueo de un usuario lo toma antes que la fila del usuario, en el mismo orden que el login, así que no se traban entre sí. Un refresh y una revocación simultáneos no dejan ninguna sesión viva.

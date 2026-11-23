@@ -53,6 +53,47 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Logout_WithARotatedToken_IsTreatedAsReuse()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var seed = await SeedAsync(cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = CreateAppClient(factory, seed.Apps[0]);
+        var login = await LoginAsync(client, seed.User, cancellationToken);
+        var refreshed = await RefreshAsync(client, login.RefreshToken, cancellationToken);
+
+        var logout = await client.PostAsJsonAsync("/api/auth/logout", new RefreshRequest(login.RefreshToken), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
+        await AssertProblemAsync(
+            await client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(refreshed.RefreshToken), cancellationToken),
+            HttpStatusCode.Unauthorized,
+            AuthErrors.RefreshTokenRevoked,
+            cancellationToken);
+        var tokens = await ReadTokensAsync(seed.User.Id, cancellationToken);
+        Assert.Equal(RefreshTokenRevocationReason.ReuseDetected, tokens[1].RevokedReason);
+        var audit = Assert.Single(await ReadAuditAsync(tokens[0].FamilyId.ToString(), cancellationToken));
+        Assert.Equal(AuditActions.RefreshTokenReuseDetected, audit.Action);
+    }
+
+    [Fact]
+    public async Task Logout_OfAnExpiredFamily_ChangesNothing()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var seed = await SeedAsync(cancellationToken);
+        var expired = RefreshToken.Issue(seed.User.Id, seed.Apps[0].Id, DateTime.UtcNow.AddDays(-31), TimeSpan.FromDays(30), null, null);
+        await SaveAllAsync(cancellationToken, expired.Token);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = CreateAppClient(factory, seed.Apps[0]);
+
+        var logout = await client.PostAsJsonAsync("/api/auth/logout", new RefreshRequest(expired.PlainToken), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
+        Assert.Null(Assert.Single(await ReadTokensAsync(seed.User.Id, cancellationToken)).RevokedAtUtc);
+        Assert.Empty(await ReadAuditAsync(expired.Token.FamilyId.ToString(), cancellationToken));
+    }
+
+    [Fact]
     public async Task Logout_Twice_Returns204BothTimesAndAuditsOnce()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -239,6 +280,24 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         Assert.Contains(seed.Apps[0].AppKey, audit.NewValues, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("%20")]
+    public async Task DeleteSessions_WithABlankAppKey_Returns404AndRevokesNothing(string appKey)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var seed = await SeedAsync(cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = CreateAppClient(factory, seed.Apps[0]);
+        using var admin = factory.CreateClient();
+        var login = await LoginAsync(client, seed.User, cancellationToken);
+
+        var response = await admin.DeleteAsync($"/api/users/{seed.User.Id}/sessions?appKey={appKey}", cancellationToken);
+
+        await AssertProblemAsync(response, HttpStatusCode.NotFound, ApplicationErrors.NotFound, cancellationToken);
+        await RefreshAsync(client, login.RefreshToken, cancellationToken);
+    }
+
     [Fact]
     public async Task DeleteSessions_WithNothingToRevoke_Returns200WithZeroAndRecordsNothing()
     {
@@ -315,6 +374,11 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         Assert.All(await ReadTokensAsync(seed.User.Id, cancellationToken), token => Assert.NotNull(token.RevokedAtUtc));
     }
 
+    /// <summary>
+    /// The login queues on the advisory lock first, so it is granted first when the blocker releases it. With the lock
+    /// order reversed in the user lock (row before advisory lock), the login would then wait on the row the user lock holds
+    /// while the user lock waits on the advisory lock: a deadlock, reported by PostgreSQL as a 500 on one request.
+    /// </summary>
     [Fact]
     public async Task ConcurrentLoginAndUserLock_DoNotDeadlockAndLeaveNoActiveSession()
     {
@@ -354,6 +418,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         }
 
         var firstTask = first();
+        await WaitForBlockedAdvisoryLocksAsync(1, cancellationToken);
         var secondTask = second();
         await WaitForBlockedAdvisoryLocksAsync(2, cancellationToken);
         await transaction.CommitAsync(cancellationToken);

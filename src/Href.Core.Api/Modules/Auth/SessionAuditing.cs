@@ -3,6 +3,9 @@ using Href.Core.Api.Modules.Users;
 
 namespace Href.Core.Api.Modules.Auth;
 
+/// <summary>
+/// Audit helper for bulk session revocations (admin revoke, user lock and, later, password reset).
+/// </summary>
 public static class SessionAuditing
 {
     /// <summary>
