@@ -93,7 +93,26 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 
 ## Verificación
 
-- CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main`, con `contents: read` y un timeout de 20 minutos. Pasos: chequeo de reglas de código (sin comentarios en línea ni caracteres U+2028/U+2029 en `src` y `tests`), `dotnet restore`, `dotnet build -warnaserror` (equivale al typecheck; cualquier warning rompe el build), `dotnet test --blame-hang-timeout 5m` y `docker build` de la imagen que construye Railway.
+- CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main` y `develop`, con `contents: read`. Las acciones están fijadas por SHA (Dependabot las actualiza). Jobs en paralelo:
+  - `repository-rules`:
+    - reglas de código (sin comentarios en línea ni U+2028/U+2029 en `src` y `tests`);
+    - **migraciones inmutables**: falla si el PR modifica, borra o renombra un script de `Database/Migrations/` que ya existe en la rama base;
+    - **`CHANGELOG.md` obligatorio** en todo PR salvo los de Dependabot.
+  - `release-rules` (solo PRs a `main`, que es producción):
+    - el origen tiene que ser `develop`;
+    - si `<Version>` cambia, tiene que subir (semver);
+    - `CHANGELOG.md` tiene que tener `## X.Y.Z - AAAA-MM-DD` y una `## Próxima versión` vacía;
+    - el tag `vX.Y.Z` no puede existir.
+
+    Un release sin bump pasa con un aviso.
+  - `build-and-test`:
+    - `dotnet restore`;
+    - **paquetes con vulnerabilidades conocidas** (`dotnet list package --vulnerable --include-transitive`): bloquea hacia `main`, y en `develop` solo avisa;
+    - `dotnet build -warnaserror` (equivale al typecheck);
+    - `dotnet test --blame-hang-timeout 5m` con resultados TRX. Si falla, se suben `TestResults/` y los dumps como artifact.
+  - `docker`: `docker build` de la imagen que construye Railway y **escaneo con Trivy** (HIGH/CRITICAL con fix disponible): bloquea hacia `main`, y en `develop` solo avisa.
+- CodeQL (`.github/workflows/codeql.yml`): análisis `security-extended` de C# en cada PR, en cada push a `main` y `develop`, y todos los lunes. Los resultados quedan en la pestaña Security del repo.
+- Protección de `main` (configuración del repo, no del código): requiere PR, los checks de CI y CodeQL, y nada de push directo. Cómo configurarla: `docs/branch-protection.md`.
 - La imagen Docker la construye Railway.
 - Claude no corre build, test ni lint en local: indica qué comando correr y el usuario le pasa el resultado.
 - Tests de integración (`tests/Href.Core.Tests/Integration/`):

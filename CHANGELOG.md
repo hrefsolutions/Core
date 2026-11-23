@@ -4,6 +4,24 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Infraestructura
+
+- CI endurecido (`.github/workflows/ci.yml`), con jobs en paralelo y acciones fijadas por SHA:
+  - **Reglas del repositorio en cada PR:**
+    - falla si se edita, borra o renombra una migración que ya existe en la rama base;
+    - falla si el PR no toca `CHANGELOG.md`, salvo los PRs de Dependabot.
+  - **Reglas de release, solo en PRs a `main` (producción):**
+    - el origen tiene que ser `develop`;
+    - si cambia `<Version>`, tiene que subir;
+    - `CHANGELOG.md` tiene que tener la sección `## X.Y.Z - AAAA-MM-DD` y una `## Próxima versión` vacía;
+    - el tag no puede existir.
+  - **Paquetes NuGet con vulnerabilidades conocidas:** bloquean hacia `main` y solo avisan en `develop`.
+  - **Escaneo de la imagen Docker con Trivy** (HIGH/CRITICAL con fix disponible): bloquea hacia `main` y solo avisa en `develop`.
+  - **Resultados de tests:** se generan en TRX y, si fallan, se suben como artifact junto con los dumps de cuelgues.
+  - **Push a `develop`:** el CI también corre en cada push, no solo en `main`.
+- CodeQL (`.github/workflows/codeql.yml`): análisis `security-extended` de C# en cada PR, en cada push a `main` y `develop`, y todos los lunes.
+- `docs/branch-protection.md`: las reglas de protección de `main` y `develop` (checks requeridos, sin push directo, CodeQL bloqueante) y los comandos `gh` para aplicarlas. Son configuración del repositorio y las aplica un admin.
+
 ## 0.3.0 - 2026-11-19
 
 ### Agregado
