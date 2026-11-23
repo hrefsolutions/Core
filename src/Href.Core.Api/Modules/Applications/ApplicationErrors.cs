@@ -38,5 +38,5 @@ public static class ApplicationErrors
 
     public static readonly Error Reserved = Error.Conflict(
         "Applications.Reserved",
-        "The reserved core application cannot be suspended.");
+        "The reserved core application cannot be suspended or opened to self-registration.");
 }

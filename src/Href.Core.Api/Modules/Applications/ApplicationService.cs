@@ -133,6 +133,11 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
             return ApplicationErrors.NotFound;
         }
 
+        if (request.AllowSelfRegistration && application.Id == CoreApplication.Id)
+        {
+            return ApplicationErrors.Reserved;
+        }
+
         var updateResult = application.Update(request.Name, request.Description, request.AllowSelfRegistration);
 
         if (updateResult.IsFailure)

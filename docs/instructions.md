@@ -29,15 +29,21 @@ The admin frontend's backend logs in through the reserved `core` application, wh
 | Variable | Value | Notes |
 |---|---|---|
 | `Bootstrap__CoreClientSecret` | A random secret of at least 32 characters, no whitespace (for example `openssl rand -base64 48 \| tr -d '\n/+='`) | **Secret.** The client secret of the `core` application. Store it in the admin frontend's backend. |
-| `Bootstrap__AdminEmail` | Email of the first admin | If a user with that email exists, it keeps its password and gets admin access. |
-| `Bootstrap__AdminPassword` | Password of the first admin | **Secret.** 10 to 128 characters. Ignored if the user already exists. |
+| `Bootstrap__AdminEmail` | Email of the first admin | If a verified user with that email exists, it keeps its password and gets admin access. An unverified one gets the bootstrap password first. |
+| `Bootstrap__AdminPassword` | Password of the first admin | **Secret.** 10 to 128 characters. Ignored only for an existing verified user. |
 | `Bootstrap__AdminFullName` | Optional, default `Administrator` | Only used when the user is created. |
 
 1. Set the variables and deploy. The logs show `Bootstrap gave core admin access to user ...` and the warnings to remove the variables.
 2. From the admin frontend's backend, call `POST /api/auth/login` with `X-App-Key: core`, `X-App-Secret: <core secret>` and the admin's email and password. Use the `accessToken` as `Authorization: Bearer ...` on the admin endpoints.
 3. Remove `Bootstrap__AdminEmail`, `Bootstrap__AdminPassword` and `Bootstrap__CoreClientSecret` from Railway and redeploy. While `Bootstrap__CoreClientSecret` is set, every restart sets the `core` secret again and undoes any rotation done through `POST /api/apps/core/secret/rotate`.
 
-The bootstrap does nothing while an active user holds `core.admin`. If every admin is locked or loses the role, set the admin variables again to recover access. The `core` application cannot be suspended, and its `core.admin` permission and `admin` role cannot be deleted. The role also cannot lose that permission. All of these attempts return `409`.
+The bootstrap does nothing while some user holds `core.admin` and can log in (active, with a verified email). If every admin is locked, unverified or without the role, set the admin variables again to recover access. When the admins are locked, use an email that does not belong to a locked user: the bootstrap does not unlock users.
+
+The `core` application has these protections, and each attempt returns `409`:
+
+- it cannot be suspended or opened to self-registration;
+- its `core.admin` permission and its `admin` role cannot be deleted;
+- the role cannot lose that permission.
 
 ## Public domain
 

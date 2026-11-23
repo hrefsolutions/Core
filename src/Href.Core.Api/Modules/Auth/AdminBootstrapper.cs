@@ -12,9 +12,12 @@ namespace Href.Core.Api.Modules.Auth;
 /// <summary>
 /// First-deploy bootstrap, run once at startup (after the migrations) in one transaction serialized across instances by
 /// an advisory lock. With <c>Bootstrap:CoreClientSecret</c> it sets the secret of the reserved <c>core</c> application.
-/// With <c>Bootstrap:AdminEmail</c> and <c>Bootstrap:AdminPassword</c>, when no active user holds <c>core.admin</c>, it
-/// creates that user (email verified) or reuses the existing one (its password is kept), and gives it access to
-/// <c>core</c> with the <c>admin</c> role. Every change is audited with actor <c>System</c>; a warning reminds to remove
+/// With <c>Bootstrap:AdminEmail</c> and <c>Bootstrap:AdminPassword</c>, when no active and verified user holds
+/// <c>core.admin</c> (the same conditions login checks), it creates that user (email verified) or reuses the existing
+/// one, and gives it access to <c>core</c> with the <c>admin</c> role. A verified existing user keeps its password; an
+/// unverified one gets the bootstrap password (which regenerates its security stamp) before it is verified, so whoever
+/// registered that email cannot take over the admin account. An existing user is changed under the per-user refresh
+/// token lock and the user row lock, in that order. Every change is audited with actor <c>System</c>; a warning reminds to remove
 /// the variables.
 /// </summary>
 public sealed partial class AdminBootstrapper(
@@ -106,7 +109,11 @@ public sealed partial class AdminBootstrapper(
             .ToListAsync(cancellationToken);
         var hasActiveAdmin = adminUserIds.Count > 0
             && await session.Query<User>()
-                .AnyAsync(user => adminUserIds.Contains(user.Id) && user.Status == UserStatus.Active, cancellationToken);
+                .AnyAsync(
+                    user => adminUserIds.Contains(user.Id)
+                        && user.Status == UserStatus.Active
+                        && user.EmailVerifiedAtUtc != null,
+                    cancellationToken);
 
         if (hasActiveAdmin)
         {
@@ -118,9 +125,13 @@ public sealed partial class AdminBootstrapper(
             ?? throw new InvalidOperationException("The reserved admin role does not exist; migration 0008_seed_core_admin.sql was not applied.");
         var email = User.NormalizeEmail(bootstrap.AdminEmail).Value;
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var user = await session.Query<User>().SingleOrDefaultAsync(existing => existing.Email == email, cancellationToken);
+        var existingId = await session.Query<User>()
+            .Where(existing => existing.Email == email)
+            .Select(existing => (Guid?)existing.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        User user;
 
-        if (user is null)
+        if (existingId is null)
         {
             var created = User.Create(
                 email,
@@ -138,16 +149,31 @@ public sealed partial class AdminBootstrapper(
             await session.SaveAsync(user, cancellationToken);
             await auditService.RecordUserChangeAsync(AuditActions.UserCreated, null, UserAuditSnapshot.From(user), cancellationToken);
         }
-        else if (user.Status == UserStatus.Locked)
+        else
         {
-            LogExistingUserLocked(logger, user.Id);
-            return;
-        }
-        else if (user.EmailVerifiedAtUtc is null)
-        {
-            var before = UserAuditSnapshot.From(user);
-            user.MarkEmailVerified(now);
-            await auditService.RecordUserChangeAsync(AuditActions.UserUpdated, before, UserAuditSnapshot.From(user), cancellationToken);
+            await RefreshTokenWrites.LockUserAsync(session, existingId.Value, cancellationToken);
+            user = await session.GetAsync<User>(existingId.Value, NHibernate.LockMode.Upgrade, cancellationToken);
+
+            if (user.Status == UserStatus.Locked)
+            {
+                LogExistingUserLocked(logger, user.Id);
+                return;
+            }
+
+            if (user.EmailVerifiedAtUtc is null)
+            {
+                var before = UserAuditSnapshot.From(user);
+                var passwordResult = user.SetPassword(bootstrap.AdminPassword, passwordHasher);
+
+                if (passwordResult.IsFailure)
+                {
+                    throw new InvalidOperationException($"The bootstrap admin password could not be set: {passwordResult.Error.Code}.");
+                }
+
+                user.MarkEmailVerified(now);
+                await auditService.RecordUserChangeAsync(AuditActions.UserUpdated, before, UserAuditSnapshot.From(user), cancellationToken);
+                LogUnverifiedUserTakenOver(logger, user.Id);
+            }
         }
 
         var access = await session.Query<UserApplicationAccess>()
@@ -198,6 +224,9 @@ public sealed partial class AdminBootstrapper(
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Bootstrap admin not created: the existing user {UserId} with that email is locked")]
     private static partial void LogExistingUserLocked(ILogger logger, Guid userId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Bootstrap set the password of the unverified user {UserId} and verified it, so whoever registered that email cannot use the admin account")]
+    private static partial void LogUnverifiedUserTakenOver(ILogger logger, Guid userId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Bootstrap gave core admin access to user {UserId}; remove Bootstrap__AdminEmail and Bootstrap__AdminPassword")]
     private static partial void LogAdminBootstrapped(ILogger logger, Guid userId);

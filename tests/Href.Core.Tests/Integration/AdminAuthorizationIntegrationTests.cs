@@ -108,8 +108,15 @@ public sealed class AdminAuthorizationIntegrationTests(PostgresFixture postgres)
             factory.CreateAccessToken([CoreApplication.AdminPermissionKey], audience: "billing"),
             CreateToken(signingCredentials, tokenType: null, expires: DateTime.UtcNow.AddMinutes(5)),
             CreateToken(signingCredentials, AccessTokenFactory.AccessTokenType, expires: DateTime.UtcNow.AddMinutes(-5)),
+            CreateToken(signingCredentials, AccessTokenFactory.AccessTokenType, DateTime.UtcNow.AddMinutes(5), issuer: "https://evil.example"),
             CreateToken(
                 new SigningCredentials(new RsaSecurityKey(System.Security.Cryptography.RSA.Create(2048)) { KeyId = "foreign" }, SecurityAlgorithms.RsaSha256),
+                AccessTokenFactory.AccessTokenType,
+                DateTime.UtcNow.AddMinutes(5)),
+            CreateToken(
+                new SigningCredentials(
+                    new SymmetricSecurityKey(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)) { KeyId = signingCredentials.Key.KeyId },
+                    SecurityAlgorithms.HmacSha256),
                 AccessTokenFactory.AccessTokenType,
                 DateTime.UtcNow.AddMinutes(5)),
             "not-a-jwt",
@@ -123,6 +130,77 @@ public sealed class AdminAuthorizationIntegrationTests(PostgresFixture postgres)
 
             await AssertProblemAsync(response, HttpStatusCode.Unauthorized, AdminAuthentication.InvalidTokenError);
         }
+    }
+
+    [Fact]
+    public async Task AdminRoute_WithATokenSignedByAPreviousKey_IsAuthorized()
+    {
+        await using var factory = new ApiFactory(
+            postgres.ConnectionString,
+            overrides: new Dictionary<string, string?>
+            {
+                ["Jwt:PreviousPublicKeys:0:KeyId"] = "tests-previous",
+                ["Jwt:PreviousPublicKeys:0:PublicKeyPem"] = Href.Core.Tests.Modules.Auth.JwtTestKeys.PreviousPublicKeyPem,
+            });
+        using var previousRsa = System.Security.Cryptography.RSA.Create();
+        previousRsa.ImportFromPem(Href.Core.Tests.Modules.Auth.JwtTestKeys.PreviousPrivateKeyPem);
+        var token = CreateToken(
+            new SigningCredentials(
+                new RsaSecurityKey(previousRsa)
+                {
+                    KeyId = "tests-previous",
+                    CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false },
+                },
+                SecurityAlgorithms.RsaSha256),
+            AccessTokenFactory.AccessTokenType,
+            DateTime.UtcNow.AddMinutes(5));
+        using var client = ClientWithToken(factory, token);
+
+        var response = await client.GetAsync("/api/users", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminWrite_IsAuditedWithTheTokenUserAndTheCoreAppKey()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var admin = factory.CreateAdminClient();
+
+        var response = await admin.PostAsJsonAsync(
+            "/api/users",
+            new Href.Core.Api.Modules.Users.CreateUserRequest($"audited-{Guid.NewGuid():N}@example.com", "Audited User", "correct horse battery"),
+            cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<Href.Core.Api.Modules.Users.UserResponse>(cancellationToken);
+        await using var connection = new Npgsql.NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new Npgsql.NpgsqlCommand(
+            "SELECT actor_type, actor_id, app_key FROM audit_logs WHERE entity_id = @id AND action = 'USER_CREATED'",
+            connection);
+        command.Parameters.AddWithValue("id", created!.Id.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        Assert.True(await reader.ReadAsync(cancellationToken));
+        Assert.Equal("User", reader.GetString(0));
+        Assert.Equal(AdminClientExtensions.AdminUserId.ToString(), reader.GetString(1));
+        Assert.Equal(CoreApplication.AppKey, reader.GetString(2));
+    }
+
+    [Fact]
+    public async Task CoreApplication_CannotBeOpenedToSelfRegistration()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var admin = factory.CreateAdminClient();
+        var core = await admin.GetFromJsonAsync<ApplicationResponse>("/api/apps/core", cancellationToken);
+
+        var open = await admin.PutAsJsonAsync("/api/apps/core", new UpdateApplicationRequest(core!.Name, core.Description, true), cancellationToken);
+        var keepClosed = await admin.PutAsJsonAsync("/api/apps/core", new UpdateApplicationRequest(core.Name, core.Description, false), cancellationToken);
+
+        await AssertProblemAsync(open, HttpStatusCode.Conflict, ApplicationErrors.Reserved);
+        Assert.Equal(HttpStatusCode.OK, keepClosed.StatusCode);
     }
 
     [Fact]
@@ -218,11 +296,15 @@ public sealed class AdminAuthorizationIntegrationTests(PostgresFixture postgres)
         return client;
     }
 
-    private static string CreateToken(SigningCredentials signingCredentials, string? tokenType, DateTime expires)
+    private static string CreateToken(
+        SigningCredentials signingCredentials,
+        string? tokenType,
+        DateTime expires,
+        string issuer = "http://localhost")
     {
         var descriptor = new SecurityTokenDescriptor
         {
-            Issuer = "http://localhost",
+            Issuer = issuer,
             Audience = CoreApplication.AppKey,
             IssuedAt = expires.AddMinutes(-15),
             NotBefore = expires.AddMinutes(-15),

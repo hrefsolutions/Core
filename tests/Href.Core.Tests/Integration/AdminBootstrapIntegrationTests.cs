@@ -79,21 +79,12 @@ public sealed class AdminBootstrapIntegrationTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Bootstrap_WithAnExistingUser_GrantsAdminAccessAndKeepsThePassword()
+    public async Task Bootstrap_WithAnExistingVerifiedUser_GrantsAdminAccessAndKeepsThePassword()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var connectionString = await CreateDatabaseAsync(cancellationToken);
         const string ExistingPassword = "existing horse battery";
-        var hasher = new PasswordHasher<User>(Options.Create(new PasswordHasherOptions { IterationCount = 1_000 }));
-        var existing = User.Create(AdminEmail, "Existing User", ExistingPassword, hasher).Value;
-
-        using (var sessionFactory = NHibernateExtensions.BuildSessionFactory(connectionString, TimeProvider.System))
-        using (var session = sessionFactory.OpenSession())
-        using (var transaction = session.BeginTransaction())
-        {
-            await session.SaveAsync(existing, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
+        await SaveUserAsync(connectionString, AdminEmail, ExistingPassword, verified: true, cancellationToken);
 
         await using var factory = new ApiFactory(connectionString, overrides: BootstrapSettings());
         using var core = CoreClient(factory, CoreSecret);
@@ -104,8 +95,55 @@ public sealed class AdminBootstrapIntegrationTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.OK, withExistingPassword.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, withBootstrapPassword.StatusCode);
         Assert.Equal(1L, await ScalarAsync(connectionString, "SELECT count(*) FROM users", cancellationToken));
-        Assert.Equal(1L, await CountAuditAsync(connectionString, AuditActions.UserUpdated, cancellationToken));
+        Assert.Equal(0L, await CountAuditAsync(connectionString, AuditActions.UserUpdated, cancellationToken));
         Assert.Equal(0L, await CountAuditAsync(connectionString, AuditActions.UserCreated, cancellationToken));
+        Assert.Equal(1L, await CountAuditAsync(connectionString, AuditActions.AccessGranted, cancellationToken));
+    }
+
+    [Fact]
+    public async Task Bootstrap_WithAnExistingUnverifiedUser_ReplacesItsPasswordBeforeGrantingAdmin()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var connectionString = await CreateDatabaseAsync(cancellationToken);
+        const string SquatterPassword = "squatter horse battery";
+        await SaveUserAsync(connectionString, AdminEmail, SquatterPassword, verified: false, cancellationToken);
+
+        await using var factory = new ApiFactory(connectionString, overrides: BootstrapSettings());
+        using var core = CoreClient(factory, CoreSecret);
+
+        var withSquatterPassword = await core.PostAsJsonAsync("/api/auth/login", new LoginRequest(AdminEmail, SquatterPassword), cancellationToken);
+        var withBootstrapPassword = await core.PostAsJsonAsync("/api/auth/login", new LoginRequest(AdminEmail, AdminPassword), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, withSquatterPassword.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, withBootstrapPassword.StatusCode);
+        Assert.Equal(1L, await CountAuditAsync(connectionString, AuditActions.UserUpdated, cancellationToken));
+    }
+
+    [Fact]
+    public async Task Bootstrap_WhenTheOnlyAdminIsUnverified_CreatesANewAdmin()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var connectionString = await CreateDatabaseAsync(cancellationToken);
+        var stuckAdmin = await SaveUserAsync(connectionString, "stuck-admin@example.test", "stuck horse battery", verified: false, cancellationToken);
+
+        using (var sessionFactory = NHibernateExtensions.BuildSessionFactory(connectionString, TimeProvider.System))
+        using (var session = sessionFactory.OpenSession())
+        using (var transaction = session.BeginTransaction())
+        {
+            var adminRole = await session.GetAsync<Href.Core.Api.Modules.Authorization.Role>(CoreApplication.AdminRoleId, cancellationToken);
+            await session.SaveAsync(
+                Href.Core.Api.Modules.Authorization.UserApplicationAccess.Grant(stuckAdmin.Id, CoreApplication.Id, [adminRole]).Value,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        await using var factory = new ApiFactory(connectionString, overrides: BootstrapSettings());
+        using var core = CoreClient(factory, CoreSecret);
+
+        var login = await core.PostAsJsonAsync("/api/auth/login", new LoginRequest(AdminEmail, AdminPassword), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        Assert.Equal(1L, await CountAuditAsync(connectionString, AuditActions.UserCreated, cancellationToken));
     }
 
     [Fact]
@@ -166,6 +204,29 @@ public sealed class AdminBootstrapIntegrationTests(PostgresFixture postgres)
         var connectionString = new NpgsqlConnectionStringBuilder(postgres.ConnectionString) { Database = name }.ConnectionString;
         DatabaseMigrator.Migrate(connectionString, NullLogger.Instance);
         return connectionString;
+    }
+
+    private static async Task<User> SaveUserAsync(
+        string connectionString,
+        string email,
+        string password,
+        bool verified,
+        CancellationToken cancellationToken)
+    {
+        var hasher = new PasswordHasher<User>(Options.Create(new PasswordHasherOptions { IterationCount = 1_000 }));
+        var user = User.Create(email, "Existing User", password, hasher).Value;
+
+        if (verified)
+        {
+            user.MarkEmailVerified(DateTime.UtcNow);
+        }
+
+        using var sessionFactory = NHibernateExtensions.BuildSessionFactory(connectionString, TimeProvider.System);
+        using var session = sessionFactory.OpenSession();
+        using var transaction = session.BeginTransaction();
+        await session.SaveAsync(user, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return user;
     }
 
     private static Task<long> CountAuditAsync(string connectionString, string action, CancellationToken cancellationToken) =>
