@@ -27,6 +27,8 @@ public sealed class AccountService(
     public const string VerifyEmailTemplateKey = "verify-email";
     public const string WelcomeUserTemplateKey = "welcome-user";
 
+    public static readonly TimeSpan ResendCooldown = TimeSpan.FromSeconds(60);
+
     /// <summary>
     /// Registers a user for the calling application: the user is created unverified, gets access with the application's
     /// default role (no role if there is none) and receives the <c>verify-email</c> email with a 24 h token.
@@ -107,9 +109,10 @@ public sealed class AccountService(
 
     /// <summary>
     /// Verifies the email of the token's user and consumes the token. The token must be an email verification token of
-    /// the calling application; it is locked (<c>FOR UPDATE</c>) so two concurrent uses cannot both succeed. A user that
-    /// was already verified only gets the token consumed; otherwise <c>EMAIL_VERIFIED</c> is recorded and
-    /// <c>welcome-user</c> is queued.
+    /// the calling application. Lock order (shared by every account flow): the user row, then the token row, both
+    /// <c>FOR UPDATE</c> and read after the lock, so two concurrent uses cannot both succeed and a concurrent resend cannot
+    /// deadlock with it. A user that was already verified only gets the token consumed; otherwise <c>EMAIL_VERIFIED</c> is
+    /// recorded and, when the user is active, <c>welcome-user</c> is queued.
     /// </summary>
     public async Task<Result> VerifyEmailAsync(
         Guid applicationId,
@@ -129,19 +132,20 @@ public sealed class AccountService(
 
         using var transaction = session.BeginTransaction();
 
-        var tokenId = await session.Query<UserToken>()
+        var target = await session.Query<UserToken>()
             .Where(candidate => candidate.TokenHash == tokenHash
                 && candidate.ApplicationId == applicationId
                 && candidate.Purpose == UserTokenPurpose.EmailVerification)
-            .Select(candidate => (Guid?)candidate.Id)
+            .Select(candidate => new { candidate.Id, candidate.UserId })
             .SingleOrDefaultAsync(cancellationToken);
 
-        if (tokenId is null)
+        if (target is null)
         {
             return AuthErrors.InvalidOneTimeToken;
         }
 
-        var token = await session.GetAsync<UserToken>(tokenId.Value, NHibernate.LockMode.Upgrade, cancellationToken);
+        var user = await session.GetAsync<User>(target.UserId, NHibernate.LockMode.Upgrade, cancellationToken);
+        var token = await session.GetAsync<UserToken>(target.Id, NHibernate.LockMode.Upgrade, cancellationToken);
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var consumed = token.Consume(now);
 
@@ -150,14 +154,17 @@ public sealed class AccountService(
             return consumed.Error;
         }
 
-        var user = await session.GetAsync<User>(token.UserId, NHibernate.LockMode.Upgrade, cancellationToken);
+        var verifiedNow = user.EmailVerifiedAtUtc is null;
 
-        if (user.EmailVerifiedAtUtc is null)
+        if (verifiedNow)
         {
             var before = UserAuditSnapshot.From(user);
             user.MarkEmailVerified(now);
             await auditService.RecordUserChangeAsync(AuditActions.EmailVerified, before, UserAuditSnapshot.From(user), cancellationToken);
+        }
 
+        if (verifiedNow && user.Status == UserStatus.Active)
+        {
             var application = await session.GetAsync<Application>(applicationId, cancellationToken);
             var welcome = await notificationService.QueueTemplateAsync(
                 appKey,
@@ -180,9 +187,11 @@ public sealed class AccountService(
     }
 
     /// <summary>
-    /// Sends a new verification email and revokes the previous verification tokens of the user. The caller always answers
-    /// 202: nothing is sent when the email is unknown, the user is locked or already verified, or has no access to the
-    /// calling application. Only an invalid page URL is reported, because it does not depend on the user.
+    /// Sends a new verification email and revokes the user's previous verification tokens of every application (verification
+    /// is per user). The caller always answers 202: nothing is sent when the email is unknown, the user is locked or
+    /// already verified, has no access to the calling application, or got a verification token less than
+    /// <see cref="ResendCooldown"/> ago (so a recipient's inbox cannot be flooded). Only an invalid page URL is reported,
+    /// because it does not depend on the user. Lock order: the user row, then the token rows.
     /// </summary>
     public async Task<Result> ResendVerificationAsync(
         Guid applicationId,
@@ -233,6 +242,11 @@ public sealed class AccountService(
                 && token.ConsumedAtUtc == null
                 && token.RevokedAtUtc == null)
             .ToListAsync(cancellationToken);
+
+        if (previous.Any(token => token.CreatedAtUtc > now - ResendCooldown))
+        {
+            return Result.Success();
+        }
 
         foreach (var token in previous)
         {

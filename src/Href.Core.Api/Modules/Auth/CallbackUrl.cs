@@ -30,6 +30,7 @@ public static class CallbackUrl
             || parsed.UserInfo.Length > 0
             || parsed.Fragment.Length > 0
             || string.IsNullOrEmpty(parsed.Host)
+            || parsed.AbsoluteUri.Length > MaxLength
             || HasTokenParameter(parsed.Query))
         {
             return false;
@@ -53,7 +54,7 @@ public static class CallbackUrl
 
     private static bool HasTokenParameter(string query) =>
         query.TrimStart('?')
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Split(new[] { '&', ';' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(pair => Uri.UnescapeDataString(pair.Split('=', 2)[0]))
             .Any(name => string.Equals(name, TokenParameterName, StringComparison.OrdinalIgnoreCase));
 }

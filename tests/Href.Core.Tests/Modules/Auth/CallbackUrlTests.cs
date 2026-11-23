@@ -29,6 +29,7 @@ public sealed class CallbackUrlTests
     [InlineData("https://app.example.com/verify?token=abc")]
     [InlineData("https://app.example.com/verify?x=1&TOKEN=abc")]
     [InlineData("https://app.example.com/verify?%74oken=abc")]
+    [InlineData("https://app.example.com/verify?a=1;token=abc")]
     [InlineData("https://app.example.com/verify\nX-Injected: 1")]
     public void TryParse_RejectsUnsafeOrAmbiguousUrls(string? url)
     {
@@ -40,6 +41,15 @@ public sealed class CallbackUrlTests
     {
         var url = "https://app.example.com/" + new string('a', CallbackUrl.MaxLength);
 
+        Assert.False(CallbackUrl.TryParse(url, out _));
+    }
+
+    [Fact]
+    public void TryParse_RejectsUrlsWhoseEscapedFormIsLongerThan2048Characters()
+    {
+        var url = "https://app.example.com/" + new string('ñ', 500);
+
+        Assert.True(url.Length <= CallbackUrl.MaxLength);
         Assert.False(CallbackUrl.TryParse(url, out _));
     }
 

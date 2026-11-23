@@ -243,19 +243,14 @@ public sealed partial class AccountEndpointsIntegrationTests(PostgresFixture pos
         using var client = AppClient(factory, app);
         var email = UniqueEmail();
         var registered = await RegisterAsync(client, email, cancellationToken);
-
-        await using var blocker = new NpgsqlConnection(postgres.ConnectionString);
-        await blocker.OpenAsync(cancellationToken);
-        await using var blockerTransaction = await blocker.BeginTransactionAsync(cancellationToken);
-        await using (var hold = new NpgsqlCommand("SELECT id FROM user_tokens WHERE user_id = @userId FOR UPDATE", blocker, blockerTransaction))
-        {
-            hold.Parameters.AddWithValue("userId", registered.UserId);
-            await hold.ExecuteScalarAsync(cancellationToken);
-        }
+        var (blocker, blockerTransaction, blockerPid) = await OpenBlockerAsync(cancellationToken);
+        await using var blockerConnection = blocker;
+        await using var heldTransaction = blockerTransaction;
+        await LockUserRowAsync(blocker, blockerTransaction, registered.UserId, cancellationToken);
 
         var first = client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(registered.Token), cancellationToken);
         var second = client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(registered.Token), cancellationToken);
-        await WaitForBlockedLocksAsync(2, cancellationToken);
+        await WaitForWaitersAsync(blockerPid, 2, cancellationToken);
         await blockerTransaction.CommitAsync(cancellationToken);
         var responses = await Task.WhenAll(first, second);
 
@@ -268,6 +263,119 @@ public sealed partial class AccountEndpointsIntegrationTests(PostgresFixture pos
         Assert.Equal(2, (await ReadNotificationsAsync(email, cancellationToken)).Count);
     }
 
+    /// <summary>
+    /// Resend queues on the user row first, so it is granted first. With the old verify order (token row before user row)
+    /// verify would hold the token that resend revokes while waiting for the user row: a deadlock and a 500.
+    /// </summary>
+    [Fact]
+    public async Task VerifyEmailAndResend_AtTheSameTime_DoNotDeadlock()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(selfRegistration: true, withDefaultRole: true, cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app);
+        var email = UniqueEmail();
+        var registered = await RegisterAsync(client, email, cancellationToken);
+        await AgeVerificationTokensAsync(registered.UserId, cancellationToken);
+        var (blocker, blockerTransaction, blockerPid) = await OpenBlockerAsync(cancellationToken);
+        await using var blockerConnection = blocker;
+        await using var heldTransaction = blockerTransaction;
+        await LockUserRowAsync(blocker, blockerTransaction, registered.UserId, cancellationToken);
+
+        var resend = client.PostAsJsonAsync("/api/auth/resend-verification", new ResendVerificationRequest(email, VerifyUrl), cancellationToken);
+        await WaitForWaitersAsync(blockerPid, 1, cancellationToken);
+        var verify = client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(registered.Token), cancellationToken);
+        await WaitForWaitersAsync(blockerPid, 2, cancellationToken);
+        await blockerTransaction.CommitAsync(cancellationToken);
+        var resendResponse = await resend;
+        var verifyResponse = await verify;
+
+        Assert.Equal(HttpStatusCode.Accepted, resendResponse.StatusCode);
+        await AssertProblemAsync(verifyResponse, HttpStatusCode.BadRequest, AuthErrors.InvalidOneTimeToken, cancellationToken);
+        Assert.Equal(2, (await ReadNotificationsAsync(email, cancellationToken)).Count);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_ForALockedUser_VerifiesWithoutTheWelcomeEmail()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(selfRegistration: true, withDefaultRole: true, cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app);
+        var email = UniqueEmail();
+        var registered = await RegisterAsync(client, email, cancellationToken);
+
+        using (var session = postgres.SessionFactory.OpenSession())
+        using (var transaction = session.BeginTransaction())
+        {
+            (await session.GetAsync<User>(registered.UserId, cancellationToken)).Lock("Fraud", DateTime.UtcNow);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var verify = await client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(registered.Token), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, verify.StatusCode);
+        Assert.Single(await ReadNotificationsAsync(email, cancellationToken));
+        using var verifySession = postgres.SessionFactory.OpenSession();
+        Assert.NotNull((await verifySession.GetAsync<User>(registered.UserId, cancellationToken)).EmailVerifiedAtUtc);
+    }
+
+    [Fact]
+    public async Task ResendVerification_WithinTheCooldown_Returns202AndQueuesNothing()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(selfRegistration: true, withDefaultRole: true, cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app);
+        var email = UniqueEmail();
+        var registered = await RegisterAsync(client, email, cancellationToken);
+
+        var responses = new List<HttpResponseMessage>();
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            responses.Add(await client.PostAsJsonAsync("/api/auth/resend-verification", new ResendVerificationRequest(email, VerifyUrl), cancellationToken));
+        }
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.Accepted, response.StatusCode));
+        Assert.Single(await ReadNotificationsAsync(email, cancellationToken));
+        var verify = await client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(registered.Token), cancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, verify.StatusCode);
+    }
+
+    [Fact]
+    public async Task Register_WhileAnotherTransactionInsertsTheSameEmail_Returns409FromTheUniqueIndex()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(selfRegistration: true, withDefaultRole: true, cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app);
+        var email = UniqueEmail();
+        var (blocker, blockerTransaction, blockerPid) = await OpenBlockerAsync(cancellationToken);
+        await using var blockerConnection = blocker;
+        await using var heldTransaction = blockerTransaction;
+        await using (var insert = new NpgsqlCommand(
+            """
+            INSERT INTO users (id, email, full_name, password_hash, status, security_stamp, created_at_utc, updated_at_utc)
+            VALUES (@id, @email, 'Racer', 'not-a-hash', 'Active', @stamp, now(), now())
+            """,
+            blocker,
+            blockerTransaction))
+        {
+            insert.Parameters.AddWithValue("id", Guid.CreateVersion7());
+            insert.Parameters.AddWithValue("email", email);
+            insert.Parameters.AddWithValue("stamp", Guid.NewGuid());
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var register = client.PostAsJsonAsync("/api/auth/register", new RegisterRequest(email, Password, "Ana", VerifyUrl), cancellationToken);
+        await WaitForWaitersAsync(blockerPid, 1, cancellationToken);
+        await blockerTransaction.CommitAsync(cancellationToken);
+
+        await AssertProblemAsync(await register, HttpStatusCode.Conflict, AuthErrors.EmailAlreadyRegistered, cancellationToken);
+        Assert.Empty(await ReadNotificationsAsync(email, cancellationToken));
+    }
+
     [Fact]
     public async Task ResendVerification_RevokesThePreviousTokenAndQueuesANewEmail()
     {
@@ -277,6 +385,7 @@ public sealed partial class AccountEndpointsIntegrationTests(PostgresFixture pos
         using var client = AppClient(factory, app);
         var email = UniqueEmail();
         var registered = await RegisterAsync(client, email, cancellationToken);
+        await AgeVerificationTokensAsync(registered.UserId, cancellationToken);
 
         var resend = await client.PostAsJsonAsync("/api/auth/resend-verification", new ResendVerificationRequest(email, VerifyUrl), cancellationToken);
 
@@ -306,6 +415,7 @@ public sealed partial class AccountEndpointsIntegrationTests(PostgresFixture pos
         using var otherClient = AppClient(factory, other);
         var email = UniqueEmail();
         var registered = await RegisterAsync(client, email, cancellationToken);
+        await AgeVerificationTokensAsync(registered.UserId, cancellationToken);
 
         if (scenario is "verified" or "locked")
         {
@@ -485,7 +595,29 @@ public sealed partial class AccountEndpointsIntegrationTests(PostgresFixture pos
         return [userId.ToString(), .. accessIds.Select(id => id.ToString())];
     }
 
-    private async Task WaitForBlockedLocksAsync(int expected, CancellationToken cancellationToken)
+    private async Task<(NpgsqlConnection Connection, NpgsqlTransaction Transaction, int Pid)> OpenBlockerAsync(CancellationToken cancellationToken)
+    {
+        var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("SELECT pg_backend_pid()", connection, transaction);
+        var pid = (int)(await command.ExecuteScalarAsync(cancellationToken))!;
+        return (connection, transaction, pid);
+    }
+
+    private static async Task LockUserRowAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid userId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT id FROM users WHERE id = @userId FOR UPDATE", connection, transaction);
+        command.Parameters.AddWithValue("userId", userId);
+        await command.ExecuteScalarAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits until <paramref name="expected"/> sessions wait behind the blocker's session, ignoring locks of any other test.
+    /// Waiters for the same row queue behind each other: only the first one is blocked by the blocker directly, the next
+    /// ones are blocked by the first (it holds the tuple lock), so the whole chain is counted recursively.
+    /// </summary>
+    private async Task WaitForWaitersAsync(int blockerPid, int expected, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(postgres.ConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -494,8 +626,17 @@ public sealed partial class AccountEndpointsIntegrationTests(PostgresFixture pos
         while (true)
         {
             await using var command = new NpgsqlCommand(
-                "SELECT count(DISTINCT pid) FROM pg_locks WHERE NOT granted",
+                """
+                WITH RECURSIVE waiters(pid) AS (
+                    SELECT activity.pid FROM pg_stat_activity activity WHERE @blockerPid = ANY(pg_blocking_pids(activity.pid))
+                    UNION
+                    SELECT activity.pid FROM pg_stat_activity activity
+                    JOIN waiters ON waiters.pid = ANY(pg_blocking_pids(activity.pid))
+                )
+                SELECT count(*) FROM waiters
+                """,
                 connection);
+            command.Parameters.AddWithValue("blockerPid", blockerPid);
             var blocked = (long)(await command.ExecuteScalarAsync(cancellationToken))!;
 
             if (blocked >= expected)
@@ -503,9 +644,20 @@ public sealed partial class AccountEndpointsIntegrationTests(PostgresFixture pos
                 return;
             }
 
-            Assert.True(DateTime.UtcNow < deadline, $"Only {blocked} of {expected} requests are waiting on the token row.");
+            Assert.True(DateTime.UtcNow < deadline, $"Only {blocked} of {expected} requests are waiting on the blocker.");
             await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
         }
+    }
+
+    private async Task AgeVerificationTokensAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "UPDATE user_tokens SET created_at_utc = created_at_utc - interval '2 minutes' WHERE user_id = @userId",
+            connection);
+        command.Parameters.AddWithValue("userId", userId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private sealed record SeededApplication(Guid Id, string AppKey, string Secret);
