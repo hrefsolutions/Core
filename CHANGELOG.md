@@ -4,6 +4,13 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Seguridad
+
+- Logs sin entradas falsificadas (alertas `cs/log-forging` de CodeQL):
+  - `GlobalExceptionHandler` ya no escribe el método ni el path del request en el log de la excepción. Los tiene la línea de fin del request, con el mismo `CorrelationId`.
+  - Fuera de `Development`, la consola escribe una línea JSON por evento (`time`, `level`, `message`, `exception` y cada propiedad como atributo), el formato de logs estructurados de Railway. Los saltos de línea quedan escapados, así que un path con `%0A` ya no puede agregar una línea de log falsa, y un stack trace es una sola entrada. En `Development` sigue el formato de texto.
+  - El sink de consola pasó de `appsettings.json` al código (`Common/Logging/ConsoleLogging`).
+
 ## 0.4.0 - 2026-11-23
 
 ### Agregado

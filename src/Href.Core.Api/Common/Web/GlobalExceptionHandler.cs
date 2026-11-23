@@ -5,6 +5,8 @@ namespace Href.Core.Api.Common.Web;
 
 /// <summary>
 /// Converts unhandled exceptions into an RFC 7807 <see cref="ProblemDetails"/> response with status 500.
+/// The log entry carries no request data: the method and path, which the client controls, are in the request completion
+/// log line with the same <c>CorrelationId</c>.
 /// </summary>
 public sealed class GlobalExceptionHandler(
     IProblemDetailsService problemDetailsService,
@@ -13,7 +15,7 @@ public sealed class GlobalExceptionHandler(
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        logger.LogError(exception, "Unhandled exception while processing {Method} {Path}", httpContext.Request.Method, httpContext.Request.Path);
+        logger.LogError(exception, "Unhandled exception while processing the request");
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
 
