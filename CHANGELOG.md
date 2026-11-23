@@ -4,6 +4,107 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.4.0 - 2026-11-23
+
+### Agregado
+
+- Autenticación de los endpoints de admin con JWT (#53):
+  - **Rutas protegidas:** `/api/apps` (salvo `GET /api/apps/me`), permisos, roles y accesos por aplicación, `/api/users` (con las sesiones) y `/api/notifications/templates`. Exigen `Authorization: Bearer` con un access token de la aplicación reservada `core` (audiencia `core`, `typ: at+jwt`) que tenga el permiso `core.admin`.
+  - **Respuestas de error:**
+    - sin token, o con uno inválido, vencido, de otra audiencia o de otro tipo: `401 Auth.InvalidToken`;
+    - con un token válido sin `core.admin`: `403 Auth.AdminRequired`;
+    - las credenciales M2M no sirven en estas rutas.
+  - **Red de seguridad:** un test recorre todos los endpoints y falla si alguno no declara su acceso.
+  - **Auditoría:** las escrituras de admin registran como actor al usuario del token y como `app_key` a `core`.
+  - **Migración `0008_seed_core_admin.sql`:** crea la aplicación `core`, el permiso `core.admin` y el rol `admin`, con ids fijos.
+  - **Datos reservados:** `core` no se puede suspender ni abrir al registro propio, el permiso y el rol no se pueden borrar, y el rol no puede perder `core.admin`. Esos intentos devuelven `409 Applications.Reserved` / `Authorization.Reserved`.
+  - **Bootstrap del primer admin** (`Bootstrap__AdminEmail`, `Bootstrap__AdminPassword`, `Bootstrap__AdminFullName` y `Bootstrap__CoreClientSecret`), al arrancar:
+    - fija el secreto de `core`, que si no nadie conocería;
+    - si ningún admin puede hacer login (activo y con el email verificado), crea el admin con el email verificado o le da acceso a un usuario existente, siempre con un advisory lock y auditado como `System`. Un usuario existente verificado conserva su contraseña. Uno sin verificar recibe primero la contraseña del bootstrap, así quien registró ese email no puede quedarse con la cuenta de admin;
+    - con una configuración inválida, la API no arranca.
+  - **Paquete:** `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.15.
+- Claves de firma JWT (RS256) desde variables de entorno (`Modules/Auth/`, #22): sección `Jwt` con `Issuer`, `SigningKey:KeyId`, `SigningKey:PrivateKeyPem` (PEM PKCS#8 o PKCS#1, mínimo 2048 bits, se recomiendan 3072), `PreviousPublicKeys[]` para seguir validando tokens durante una rotación, `AccessTokenMinutes` (15, de 1 a 60) y `RefreshTokenDays` (30, de 1 a 365). Se valida al arrancar: fuera de Development la API no arranca sin clave, con un PEM que no se puede importar o de otro tipo (una clave pública como clave de firma, una privada como clave anterior), con una clave chica, con `kid` mal formados o repetidos, con un issuer que no es una URL `https` (se admite `http` solo en loopback) o que tiene ruta (las rutas `/.well-known` están en la raíz), o con duraciones fuera de rango; los mensajes nunca incluyen la clave. En Development sin clave se genera una clave efímera de 3072 bits y se loguea un warning (los tokens mueren al reiniciar).
+- `GET /.well-known/jwks.json` (anónimo): publica las claves públicas (la actual primero y después las anteriores) con su `kid`, solo `n` y `e`, con `Cache-Control: public, max-age=3600`. Un token firmado con la clave actual valida contra el JWK publicado y uno firmado con otra clave no.
+- `GET /.well-known/openid-configuration` (anónimo): devuelve solo `issuer` y `jwks_uri`, para que las aplicaciones satélite usen `AddJwtBearer(o => o.Authority = ...)` sin código propio (un test recorre el mismo descubrimiento que usa JwtBearer y valida un token del Core con las claves que encuentra).
+- Logout y revocación de sesiones (#25):
+  - **`POST /api/auth/logout` (M2M):** revoca toda la familia del refresh token como `Logout` y audita `LOGOUT`.
+    - Responde `204` para cualquier token: uno vacío, desconocido, de otra aplicación, ya revocado o de una familia sin tokens activos no cambia nada, y un segundo logout no audita.
+    - Un token ya rotado cuenta como reuso, igual que en el refresh: la familia se revoca como `ReuseDetected` y se audita `REFRESH_TOKEN_REUSE_DETECTED`.
+    - Las demás sesiones del usuario siguen activas.
+  - **`GET /api/users/{id}/sessions`:** lista las sesiones activas con la aplicación, el inicio, la última rotación, el vencimiento, la IP y el user agent.
+  - **`DELETE /api/users/{id}/sessions?appKey=`:** revoca todas las sesiones, o las de una aplicación, como `AdminRevoked`, audita `SESSIONS_REVOKED` y responde `200 { revokedSessions }`. Un `appKey` presente pero vacío devuelve `404` y nunca revoca todas.
+  - Estos dos endpoints requieren el token de admin de #53.
+  - **Bloqueo de un usuario:** ahora revoca sus sesiones como `UserLocked` en la misma transacción.
+  - **Concurrencia:** todas las escrituras de refresh tokens usan el mismo lock por usuario. El bloqueo de un usuario lo toma antes que la fila del usuario, en el mismo orden que el login, así que no se traban entre sí. Un refresh y una revocación simultáneos no dejan ninguna sesión viva.
+  - **Limitación conocida:** un access token ya emitido sigue siendo válido hasta que vence (como máximo 15 minutos).
+- `POST /api/auth/login` y `POST /api/auth/refresh` (#24): los llama el backend satélite con sus credenciales M2M, y la aplicación sale de esas credenciales, nunca del body.
+  - **Login:** devuelve un access token RS256 y un refresh token. El access token dura 15 minutos y lleva `typ: at+jwt` (RFC 9068), `kid`, `aud` y `client_id` = el `AppKey`, `sub`, `email`, `name`, `roles[]`, `permissions[]` y `jti`.
+  - **Credenciales inválidas:** un email desconocido, mal formado o vacío y una contraseña incorrecta, vacía o ausente devuelven el mismo `401 Auth.InvalidCredentials`, siempre después de verificar exactamente un hash. Así el tiempo de respuesta no revela qué emails existen.
+  - **Contraseña fuera del lock:** la contraseña se verifica antes de tomar el lock por usuario. Una ráfaga de contraseñas incorrectas no bloquea las sesiones del usuario ni agota las conexiones.
+  - **Fila del usuario bloqueada:** el usuario se vuelve a leer con `FOR UPDATE`, así un bloqueo o un cambio de email hecho por un admin al mismo tiempo no se pisa.
+  - **Estado de la cuenta:** el bloqueo, la falta de verificación del email y la falta de acceso a la aplicación devuelven 403, y solo se informan después de una contraseña correcta.
+  - **Efectos del login:** registra el último login, actualiza un hash de contraseña desactualizado y audita `LOGIN_SUCCEEDED` en la misma transacción.
+  - **Refresh:** rota el token y vuelve a leer los roles y permisos, así que un cambio de permisos se aplica en el siguiente refresh. Un token de otra aplicación responde como uno desconocido (`401 Auth.InvalidRefreshToken`).
+  - **Reuso:** un token ya rotado revoca toda la familia y audita `REFRESH_TOKEN_REUSE_DETECTED`.
+  - **Concurrencia:** las escrituras de tokens de un usuario se serializan con un advisory lock de PostgreSQL. Dos refresh simultáneos del mismo token dan un 200 y un reuso, y la familia queda revocada.
+  - **Cache:** las respuestas llevan `Cache-Control: no-store`.
+  - **Fuera de este cambio:** los logins fallidos todavía no se auditan y no hay rate limiting (#28).
+- Entidad `RefreshToken` (`Modules/Auth/`, #23) con su mapping y la migración `0007_create_refresh_tokens.sql`:
+  - El token es opaco y se guarda solo su SHA-256. El texto en claro (32 bytes aleatorios en base64url) se devuelve una sola vez, al emitirlo.
+  - Los tokens se agrupan por `FamilyId`. Cada uso revoca el token como `Rotated` y emite un sucesor en la misma familia, que vence a partir de ese momento según la duración que pasa quien llama. La conexión con `Jwt:RefreshTokenDays` llega en #24. El vencimiento es deslizante y no hay tope absoluto por familia, por decisión aceptada.
+  - `HashToken` devuelve `null` para un token vacío o ausente, así que buscarlo no da error.
+  - Presentar un token ya rotado devuelve `Auth.RefreshTokenReused`, y quien llama revoca toda la familia como `ReuseDetected` (solo los tokens activos; los ya revocados conservan su motivo). Un token revocado por otro motivo devuelve `Auth.RefreshTokenRevoked` y uno vencido, `Auth.RefreshTokenExpired`; ningún error cambia el estado.
+  - Motivos de revocación: `Rotated`, `Logout`, `ReuseDetected`, `PasswordReset`, `UserLocked` y `AdminRevoked`.
+  - La IP y el user agent se normalizan: la IP se descarta si es demasiado larga o tiene caracteres de control, y el user agent pierde los `NUL` y se trunca a 512 sin partir un carácter.
+  - La columna `version` (concurrencia optimista) impide que dos rotaciones simultáneas del mismo token confirmen las dos: la segunda falla, así que un token nunca tiene dos sucesores. No ordena una rotación frente a una revocación de familia o de usuario en otra transacción. Por eso, los servicios de #24 y #25 tienen que serializar las escrituras de tokens de cada usuario. Esta regla está documentada en `SYSTEM_MAP.md`.
+  - La tabla `refresh_tokens` tiene:
+    - FKs a `users`, a `applications` y a sí misma (`replaced_by_token_id`, diferida hasta el commit);
+    - el índice único `ux_refresh_tokens_token_hash`, un índice por familia y un índice parcial de los tokens activos por usuario y aplicación;
+    - `CHECK` sobre el motivo, la coherencia de la revocación, el reemplazo (que existe solo y siempre con `Rotated`) y el vencimiento.
+  - La limpieza de tokens vencidos queda para más adelante y tiene que borrar familias completas.
+- Paquete `Microsoft.IdentityModel.JsonWebTokens` 8.23.0 (y `Microsoft.IdentityModel.Protocols.OpenIdConnect` 8.23.0 solo en los tests).
+
+### Corregido
+
+- La línea de log de cada request (`UseSerilogRequestLogging`) se escribe en el logger de Serilog del host, el del contenedor de DI, y no en el `Log.Logger` estático. `AddSerilog` usa `preserveStaticLogger: true`.
+  - **Antes:** el estático era global al proceso, lo pisaba cada host que arrancaba, y `Program.cs` lo cerraba al terminar. Con varios hosts en un mismo proceso, como en los tests de integración, el log de un request podía ir a otro host o a un logger ya cerrado. Por eso `GetMe_WithValidCredentials_AddsAppKeyToRequestCompletionLog` fallaba de forma intermitente.
+  - **En producción:** hay un solo host y el comportamiento no cambia.
+  - **Test de regresión:** `RequestCompletionLog_GoesToTheHostLoggerEvenWhenTheStaticLoggerIsReplaced`.
+
+### Cambiado
+
+- El contenedor local (`docker compose --profile container` y `docker run --env-file`) sigue corriendo como `Production`, así que necesita una clave: `docker-compose.yml` la toma de la variable `JWT_SIGNING_PRIVATE_KEY_PEM` y `.env.example` suma las variables `Jwt__*`. El `README.md` explica cómo generar una clave local en una línea.
+- `.gitignore` ignora `*.pem` y `*.key`.
+
+### Documentación
+
+- `docs/instructions.md`: sección "First admin" (variables `Bootstrap__*`, login del admin y por qué hay que sacar las variables después). Se reemplaza la advertencia de mantener el servicio privado: queda solo para versiones anteriores a v0.4.0.
+- `docs/instructions.md`: variables `Jwt__*` para Railway; el issuer es el dominio público del servicio, que se genera recién con v0.4.0 (incluye #53). También explica cómo generar la clave de producción con OpenSSL, la rotación manual con `PreviousPublicKeys` y qué hacer si la clave se filtra. Las aplicaciones con JwtBearer refrescan las claves cada 12 horas o ante un `kid` desconocido; por eso, ante una filtración, hay que reiniciarlas.
+
+### Infraestructura
+
+- CI endurecido (`.github/workflows/ci.yml`), con jobs en paralelo y acciones fijadas por SHA:
+  - **Reglas del repositorio en cada PR:**
+    - falla si se edita, borra o renombra una migración que ya existe en la rama base;
+    - falla si el PR no toca `CHANGELOG.md`, salvo los PRs de Dependabot.
+  - **Reglas de release, solo en PRs a `main` (producción):**
+    - el origen tiene que ser `develop`;
+    - si cambia `<Version>`, tiene que subir;
+    - `CHANGELOG.md` tiene que tener la sección `## X.Y.Z - AAAA-MM-DD` y una `## Próxima versión` vacía;
+    - el tag no puede existir.
+  - **Paquetes NuGet con vulnerabilidades conocidas:** bloquean hacia `main` y solo avisan en `develop`.
+  - **Escaneo de la imagen Docker con Trivy** (HIGH/CRITICAL con fix disponible): bloquea hacia `main` y solo avisa en `develop`.
+  - **Resultados de tests:** se generan en TRX y, si fallan, se suben como artifact junto con los dumps de cuelgues.
+  - **Push a `develop`:** el CI también corre en cada push, no solo en `main`.
+- CodeQL (`.github/workflows/codeql.yml`): análisis `security-extended` de C# en cada PR, en cada push a `main` y `develop`, y todos los lunes.
+- `docs/branch-protection.md`: las reglas de protección de `main` y `develop` (checks requeridos, sin push directo, CodeQL bloqueante) y los comandos `gh` para aplicarlas. Son configuración del repositorio y las aplica un admin.
+- Protección de ramas aplicada (2026-11-23):
+  - `main` exige un PR y los checks `repository-rules`, `release-rules`, `build-and-test`, `docker` y `analyze`. Prohíbe el push directo, el force push y el borrado, también para el admin.
+  - `develop` exige un PR y los checks `repository-rules`, `build-and-test` y `docker`.
+  - Ninguna de las dos exige la rama actualizada, porque `main` acumula un merge por release.
+  - Como `develop` ya no acepta push directo, el commit de release pasa por un PR `chore/release-vX.Y.Z`.
+  - El bloqueo por alertas de CodeQL queda pendiente en la web.
+
 ## 0.3.0 - 2026-11-19
 
 ### Agregado

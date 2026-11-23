@@ -61,7 +61,7 @@ API REST en .NET 10 (Controllers) con NHibernate (`Mapping.ByCode`) sobre Postgr
 - En inglés, Conventional Commits: `type(scope): subject`. Ej.: `feat(api): add customer endpoint`, `fix(persistence): handle null audit timestamp`.
 - Scopes sugeridos: `api`, `persistence`, `domain`, `infra`, `deps`, `ci`.
 - Sin `Co-Authored-By: Claude` ni otros trailers de atribución.
-- Los commits de release van directo a `develop` con el mensaje `chore: release vX.Y.Z`.
+- El commit de release (`chore: release vX.Y.Z`: sube `<Version>` y cierra la sección del CHANGELOG) va en un PR `chore/release-vX.Y.Z` → `develop`, porque `develop` está protegida y no acepta push directo. Después se abre el PR `develop` → `main`.
 
 ## Pull requests
 
@@ -93,7 +93,29 @@ gh pr create --base develop --title "feat(api): add customer endpoint" --body-fi
 
 ## Verificación
 
-- CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main`, con `contents: read` y un timeout de 20 minutos. Pasos: chequeo de reglas de código (sin comentarios en línea ni caracteres U+2028/U+2029 en `src` y `tests`), `dotnet restore`, `dotnet build -warnaserror` (equivale al typecheck; cualquier warning rompe el build), `dotnet test --blame-hang-timeout 5m` y `docker build` de la imagen que construye Railway.
+- CI en GitHub Actions (`.github/workflows/ci.yml`): en cada `pull_request` y cada push a `main` y `develop`, con `contents: read`. Las acciones están fijadas por SHA (Dependabot las actualiza). Jobs en paralelo:
+  - `repository-rules`:
+    - reglas de código (sin comentarios en línea ni U+2028/U+2029 en `src` y `tests`);
+    - **migraciones inmutables**: falla si el PR modifica, borra o renombra un script de `Database/Migrations/` que ya existe en la rama base;
+    - **`CHANGELOG.md` obligatorio** en todo PR salvo los de Dependabot.
+  - `release-rules` (solo PRs a `main`, que es producción):
+    - el origen tiene que ser `develop`;
+    - si `<Version>` cambia, tiene que subir (semver);
+    - `CHANGELOG.md` tiene que tener `## X.Y.Z - AAAA-MM-DD` y una `## Próxima versión` vacía;
+    - el tag `vX.Y.Z` no puede existir.
+
+    Un release sin bump pasa con un aviso.
+  - `build-and-test`:
+    - `dotnet restore`;
+    - **paquetes con vulnerabilidades conocidas** (`dotnet list package --vulnerable --include-transitive`): bloquea hacia `main`, y en `develop` solo avisa;
+    - `dotnet build -warnaserror` (equivale al typecheck);
+    - `dotnet test --blame-hang-timeout 5m` con resultados TRX. Si falla, se suben `TestResults/` y los dumps como artifact.
+  - `docker`: `docker build` de la imagen que construye Railway y **escaneo con Trivy** (HIGH/CRITICAL con fix disponible): bloquea hacia `main`, y en `develop` solo avisa.
+- CodeQL (`.github/workflows/codeql.yml`): análisis `security-extended` de C# en cada PR, en cada push a `main` y `develop`, y todos los lunes. Los resultados quedan en la pestaña Security del repo.
+- Protección de ramas (configuración del repo, aplicada el 2026-11-23, ver `docs/branch-protection.md`):
+  - `main` (producción) exige un PR y los checks `repository-rules`, `release-rules`, `build-and-test`, `docker` y `analyze`. Prohíbe el push directo, el force push y el borrado, y las reglas valen también para el admin.
+  - `develop` exige un PR y los checks `repository-rules`, `build-and-test` y `docker`.
+  - Ninguna de las dos exige la rama actualizada, porque `main` acumula los merges de cada release y el CI del PR ya corre sobre el resultado del merge.
 - La imagen Docker la construye Railway.
 - Claude no corre build, test ni lint en local: indica qué comando correr y el usuario le pasa el resultado.
 - Tests de integración (`tests/Href.Core.Tests/Integration/`):
@@ -135,12 +157,13 @@ Errores que ya pasaron en este repo (revisión de v0.1.0, PR #67):
 - Chequear que algo no existe y después insertarlo no es atómico. La fuente de verdad es el índice único: se atrapa la violación (`23505`) y se devuelve el `Error` de dominio (409), no un 500.
 - Detrás del proxy de Railway, `RemoteIpAddress` es la IP del proxy si no se usa `UseForwardedHeaders`.
 - Un template de Serilog solo muestra en consola las propiedades que nombra (`{AppKey}`); agregar la propiedad al evento no alcanza para verla.
+- El `Log.Logger` estático de Serilog es global al proceso: en los tests de integración varios hosts lo pisan y lo cierran. Nada de la API escribe en él salvo el arranque y el error fatal de `Program.cs`. Los middlewares de Serilog reciben el logger del contenedor de DI (`UseSerilogRequestLogging(o => o.Logger = ...)`, `AddSerilog(..., preserveStaticLogger: true)`); de lo contrario los tests que capturan logs fallan de forma intermitente.
 
 ## Releases
 
 - Se agrupan varios issues por release, no uno por PR. Antes de abrir un release, Claude pregunta qué bloque va.
 - El PR de release `develop` → `main`:
-  - sube `<Version>` en `Href.Core.Api.csproj` según el cambio más grande (semver);
+  - lleva el commit de release del PR `chore/release-vX.Y.Z` ya mergeado en `develop`, que sube `<Version>` en `Href.Core.Api.csproj` según el cambio más grande (semver);
   - renombra `## Próxima versión` a `## X.Y.Z - AAAA-MM-DD` en `CHANGELOG.md` y deja una `## Próxima versión` vacía arriba;
   - lista en orden todos los pasos manuales (migraciones/SQL, variables de entorno en Railway, otros).
 - Después del merge: GitHub release con tag `vX.Y.Z` en el commit de merge y la sección del CHANGELOG como notas.

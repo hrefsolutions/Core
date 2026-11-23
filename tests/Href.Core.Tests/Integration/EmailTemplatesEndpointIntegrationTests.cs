@@ -24,7 +24,7 @@ public sealed partial class EmailTemplatesEndpointIntegrationTests(PostgresFixtu
     public ValueTask InitializeAsync()
     {
         _factory = new ApiFactory(postgres.ConnectionString);
-        _client = _factory.CreateClient();
+        _client = _factory.CreateAdminClient();
         return ValueTask.CompletedTask;
     }
 
@@ -711,7 +711,7 @@ public sealed partial class EmailTemplatesEndpointIntegrationTests(PostgresFixtu
         Assert.Equal("TEMPLATE_CREATED", row.Action);
         Assert.Equal(nameof(EmailTemplate), row.EntityType);
         Assert.Equal(created.Id.ToString(), row.EntityId);
-        Assert.Equal(AuditActorType.Anonymous, row.ActorType);
+        Assert.Equal(AuditActorType.User, row.ActorType);
         Assert.Null(row.OldValues);
         var values = Parse(row.NewValues);
         Assert.Equal(created.Key, values.GetProperty("key").GetString());
