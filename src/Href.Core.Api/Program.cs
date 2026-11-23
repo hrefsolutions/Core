@@ -1,3 +1,4 @@
+using Href.Core.Api.Common.Logging;
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
@@ -14,7 +15,7 @@ using Microsoft.AspNetCore.Identity;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
+    .WriteToConsole(ConsoleLogging.IsDevelopmentFromEnvironmentVariables())
     .CreateBootstrapLogger();
 
 try
@@ -25,7 +26,8 @@ try
         (services, logger) => logger
             .ReadFrom.Configuration(builder.Configuration)
             .ReadFrom.Services(services)
-            .Enrich.FromLogContext(),
+            .Enrich.FromLogContext()
+            .WriteToConsole(builder.Environment.IsDevelopment()),
         preserveStaticLogger: true);
 
     builder.Services.AddControllers();
