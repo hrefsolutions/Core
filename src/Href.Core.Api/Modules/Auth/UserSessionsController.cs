@@ -1,10 +1,12 @@
 using Href.Core.Api.Common.Web;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Href.Core.Api.Modules.Auth;
 
 [ApiController]
 [Route("api/users/{userId:guid}/sessions")]
+[Authorize(Policy = AdminAuthentication.PolicyName)]
 public sealed class UserSessionsController(UserSessionsService userSessionsService) : ControllerBase
 {
     public const string AppKeyQueryName = "appKey";

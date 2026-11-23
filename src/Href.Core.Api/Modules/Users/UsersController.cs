@@ -1,4 +1,6 @@
 using Href.Core.Api.Common.Web;
+using Href.Core.Api.Modules.Auth;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
@@ -10,6 +12,7 @@ namespace Href.Core.Api.Modules.Users;
 /// </summary>
 [ApiController]
 [Route("api/users")]
+[Authorize(Policy = AdminAuthentication.PolicyName)]
 public sealed class UsersController(UserService userService) : ControllerBase
 {
     [HttpPost]

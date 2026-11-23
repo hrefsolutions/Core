@@ -70,12 +70,18 @@ try
         .AddAuthentication()
         .AddScheme<AuthenticationSchemeOptions, AppKeyAuthenticationHandler>(
             AppKeyAuthentication.SchemeName,
-            _ => { });
+            _ => { })
+        .AddAdminBearer();
     builder.Services
         .AddAuthorizationBuilder()
         .AddPolicy(AppKeyAuthentication.PolicyName, policy => policy
             .AddAuthenticationSchemes(AppKeyAuthentication.SchemeName)
-            .RequireAuthenticatedUser());
+            .RequireAuthenticatedUser())
+        .AddPolicy(AdminAuthentication.PolicyName, policy => policy
+            .AddAuthenticationSchemes(AdminAuthentication.SchemeName)
+            .RequireAuthenticatedUser()
+            .RequireClaim(AccessTokenFactory.PermissionsClaimType, CoreApplication.AdminPermissionKey));
+    builder.Services.AddAdminBootstrap(builder.Configuration);
 
     var app = builder.Build();
 

@@ -178,7 +178,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var firstApp = CreateAppClient(factory, seed.Apps[0]);
         using var secondApp = CreateAppClient(factory, seed.Apps[1]);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
         var loggedOut = await LoginAsync(firstApp, seed.User, cancellationToken);
         await firstApp.PostAsJsonAsync("/api/auth/logout", new RefreshRequest(loggedOut.RefreshToken), cancellationToken);
         var expired = RefreshToken.Issue(seed.User.Id, seed.Apps[0].Id, DateTime.UtcNow.AddDays(-31), TimeSpan.FromDays(30), null, null);
@@ -212,7 +212,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
 
         var response = await admin.GetAsync($"/api/users/{Guid.CreateVersion7()}/sessions", cancellationToken);
 
@@ -227,7 +227,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var firstApp = CreateAppClient(factory, seed.Apps[0]);
         using var secondApp = CreateAppClient(factory, seed.Apps[1]);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
         var first = await LoginAsync(firstApp, seed.User, cancellationToken);
         var second = await LoginAsync(secondApp, seed.User, cancellationToken);
 
@@ -262,7 +262,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var firstApp = CreateAppClient(factory, seed.Apps[0]);
         using var secondApp = CreateAppClient(factory, seed.Apps[1]);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
         var first = await LoginAsync(firstApp, seed.User, cancellationToken);
         var second = await LoginAsync(secondApp, seed.User, cancellationToken);
 
@@ -289,7 +289,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         var seed = await SeedAsync(cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var client = CreateAppClient(factory, seed.Apps[0]);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
         var login = await LoginAsync(client, seed.User, cancellationToken);
 
         var response = await admin.DeleteAsync($"/api/users/{seed.User.Id}/sessions?appKey={appKey}", cancellationToken);
@@ -304,7 +304,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         var cancellationToken = TestContext.Current.CancellationToken;
         var seed = await SeedAsync(cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
 
         var response = await admin.DeleteAsync($"/api/users/{seed.User.Id}/sessions", cancellationToken);
 
@@ -319,7 +319,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         var cancellationToken = TestContext.Current.CancellationToken;
         var seed = await SeedAsync(cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
 
         var unknownUser = await admin.DeleteAsync($"/api/users/{Guid.CreateVersion7()}/sessions", cancellationToken);
         var unknownApp = await admin.DeleteAsync($"/api/users/{seed.User.Id}/sessions?appKey=no-such-app", cancellationToken);
@@ -335,7 +335,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         var seed = await SeedAsync(cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var client = CreateAppClient(factory, seed.Apps[0]);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
         var login = await LoginAsync(client, seed.User, cancellationToken);
 
         var lockResponse = await admin.PostAsJsonAsync($"/api/users/{seed.User.Id}/lock", new LockUserRequest("Compromised"), cancellationToken);
@@ -360,7 +360,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         var seed = await SeedAsync(cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var client = CreateAppClient(factory, seed.Apps[0]);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
         var login = await LoginAsync(client, seed.User, cancellationToken);
 
         var responses = await RunWhileUserLockIsHeldAsync(
@@ -386,7 +386,7 @@ public sealed class SessionsEndpointsIntegrationTests(PostgresFixture postgres)
         var seed = await SeedAsync(cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var client = CreateAppClient(factory, seed.Apps[0]);
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateAdminClient();
 
         var responses = await RunWhileUserLockIsHeldAsync(
             seed.User.Id,

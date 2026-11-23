@@ -54,6 +54,8 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out jwt-private.pe
 openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
 ```
 
+Admin endpoints (`/api/apps`, `/api/users`, roles, permissions, accesses and email templates) require `Authorization: Bearer <access token>` for the reserved `core` application with the `core.admin` permission. The first admin and the `core` client secret are set with the `Bootstrap__*` variables: see [`docs/instructions.md`](docs/instructions.md#first-admin). To try them locally, start the API with `Bootstrap__AdminEmail`, `Bootstrap__AdminPassword` and `Bootstrap__CoreClientSecret`, then log in with `X-App-Key: core`.
+
 Never commit the private key: `.gitignore` ignores `*.pem` and `*.key`, and the key belongs only in Railway.
 
 ### Keep the API running while you code

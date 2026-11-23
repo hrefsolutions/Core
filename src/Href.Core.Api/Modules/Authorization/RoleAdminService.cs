@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Results;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Auth;
 using NHibernate.Linq;
 using ISession = NHibernate.ISession;
 
@@ -226,6 +227,12 @@ public sealed class RoleAdminService(ISession session, IAuditService auditServic
             return permissionsResult.Error;
         }
 
+        if (role.Id == CoreApplication.AdminRoleId
+            && !permissionsResult.Value.Any(permission => permission.Id == CoreApplication.AdminPermissionId))
+        {
+            return AuthorizationErrors.Reserved;
+        }
+
         var before = RoleAuditSnapshot.From(role);
         var replaceResult = role.ReplacePermissions(permissionsResult.Value);
 
@@ -268,6 +275,11 @@ public sealed class RoleAdminService(ISession session, IAuditService auditServic
         if (role is null)
         {
             return AuthorizationErrors.RoleNotFound;
+        }
+
+        if (role.Id == CoreApplication.AdminRoleId)
+        {
+            return AuthorizationErrors.Reserved;
         }
 
         var accesses = await session.Query<UserApplicationAccess>()

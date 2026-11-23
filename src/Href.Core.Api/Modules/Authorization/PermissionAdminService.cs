@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Results;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Auth;
 using NHibernate.Linq;
 using ISession = NHibernate.ISession;
 
@@ -171,6 +172,11 @@ public sealed class PermissionAdminService(ISession session, IAuditService audit
         if (permission is null)
         {
             return AuthorizationErrors.PermissionNotFound;
+        }
+
+        if (permission.Id == CoreApplication.AdminPermissionId)
+        {
+            return AuthorizationErrors.Reserved;
         }
 
         var permissionId = permission.Id;

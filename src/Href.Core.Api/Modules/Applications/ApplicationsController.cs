@@ -1,4 +1,5 @@
 using Href.Core.Api.Common.Web;
+using Href.Core.Api.Modules.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,6 +28,7 @@ public sealed class ApplicationsController(ApplicationService applicationService
     }
 
     [HttpPost]
+    [Authorize(Policy = AdminAuthentication.PolicyName)]
     public async Task<IActionResult> Create(
         [FromBody] CreateApplicationRequest request,
         CancellationToken cancellationToken)
@@ -39,6 +41,7 @@ public sealed class ApplicationsController(ApplicationService applicationService
     }
 
     [HttpGet]
+    [Authorize(Policy = AdminAuthentication.PolicyName)]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
         var applications = await applicationService.ListAsync(cancellationToken);
@@ -46,6 +49,7 @@ public sealed class ApplicationsController(ApplicationService applicationService
     }
 
     [HttpGet("{appKey}")]
+    [Authorize(Policy = AdminAuthentication.PolicyName)]
     public async Task<IActionResult> GetByAppKey(string appKey, CancellationToken cancellationToken)
     {
         var result = await applicationService.GetByAppKeyAsync(appKey, cancellationToken);
@@ -56,6 +60,7 @@ public sealed class ApplicationsController(ApplicationService applicationService
     }
 
     [HttpPut("{appKey}")]
+    [Authorize(Policy = AdminAuthentication.PolicyName)]
     public async Task<IActionResult> Update(
         string appKey,
         [FromBody] UpdateApplicationRequest request,
@@ -69,6 +74,7 @@ public sealed class ApplicationsController(ApplicationService applicationService
     }
 
     [HttpPatch("{appKey}/status")]
+    [Authorize(Policy = AdminAuthentication.PolicyName)]
     public async Task<IActionResult> UpdateStatus(
         string appKey,
         [FromBody] UpdateApplicationStatusRequest request,
@@ -82,6 +88,7 @@ public sealed class ApplicationsController(ApplicationService applicationService
     }
 
     [HttpPost("{appKey}/secret/rotate")]
+    [Authorize(Policy = AdminAuthentication.PolicyName)]
     public async Task<IActionResult> RotateSecret(string appKey, CancellationToken cancellationToken)
     {
         var result = await applicationService.RotateSecretAsync(appKey, cancellationToken);

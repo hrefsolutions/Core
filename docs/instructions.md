@@ -5,7 +5,7 @@ How to configure the Href.Core service on Railway. Railway builds the root `Dock
 ASP.NET Core reads environment variables as configuration keys: a double underscore (`__`) separates sections, so `Smtp__Password` is the key `Smtp:Password` of `appsettings.json`. A variable set in Railway overrides the value in `appsettings.json`.
 
 > [!WARNING]
-> Keep the Railway service **private** (no public domain) until admin authentication ships (#53, v0.4.0). Today `/api/apps`, `/api/users`, `/api/apps/{appKey}/permissions`, `/roles`, `/users` and `/api/notifications/templates` have no authentication: anyone who reaches the API can create or lock users, change any application's roles and rewrite email templates.
+> Versions before v0.4.0 have no admin authentication. With them, keep the Railway service **private** (no public domain). From v0.4.0 on, the admin endpoints (`/api/apps`, `/api/users`, `/api/apps/{appKey}/permissions`, `/roles`, `/users` and `/api/notifications/templates`) require a bearer token of a core admin. The first admin is created with the `Bootstrap__*` variables (see [First admin](#first-admin)).
 
 ## Variables to set
 
@@ -21,6 +21,23 @@ These must exist in Railway before the first deploy.
 | `Jwt__SigningKey__PrivateKeyPem` | RSA private key in PEM | **Secret.** See [JWT signing keys](#jwt-signing-keys). PKCS#8 (`BEGIN PRIVATE KEY`) or PKCS#1 (`BEGIN RSA PRIVATE KEY`), at least 2048 bits (3072 recommended), not encrypted. Paste it with its line breaks or on one line. The API does not start without it. |
 
 Outbound SMTP needs the Railway Pro plan or higher. After an upgrade, redeploy the service.
+
+## First admin
+
+The admin frontend's backend logs in through the reserved `core` application, which migration `0008` creates. A core admin is a user with access to `core` and the `admin` role, which carries the `core.admin` permission. Nobody knows the `core` secret after the migration, and nobody is an admin yet. Set these variables for the first deploy of v0.4.0:
+
+| Variable | Value | Notes |
+|---|---|---|
+| `Bootstrap__CoreClientSecret` | A random secret of at least 32 characters, no whitespace (for example `openssl rand -base64 48 \| tr -d '\n/+='`) | **Secret.** The client secret of the `core` application. Store it in the admin frontend's backend. |
+| `Bootstrap__AdminEmail` | Email of the first admin | If a user with that email exists, it keeps its password and gets admin access. |
+| `Bootstrap__AdminPassword` | Password of the first admin | **Secret.** 10 to 128 characters. Ignored if the user already exists. |
+| `Bootstrap__AdminFullName` | Optional, default `Administrator` | Only used when the user is created. |
+
+1. Set the variables and deploy. The logs show `Bootstrap gave core admin access to user ...` and the warnings to remove the variables.
+2. From the admin frontend's backend, call `POST /api/auth/login` with `X-App-Key: core`, `X-App-Secret: <core secret>` and the admin's email and password. Use the `accessToken` as `Authorization: Bearer ...` on the admin endpoints.
+3. Remove `Bootstrap__AdminEmail`, `Bootstrap__AdminPassword` and `Bootstrap__CoreClientSecret` from Railway and redeploy. While `Bootstrap__CoreClientSecret` is set, every restart sets the `core` secret again and undoes any rotation done through `POST /api/apps/core/secret/rotate`.
+
+The bootstrap does nothing while an active user holds `core.admin`. If every admin is locked or loses the role, set the admin variables again to recover access. The `core` application cannot be suspended, and its `core.admin` permission and `admin` role cannot be deleted. The role also cannot lose that permission. All of these attempts return `409`.
 
 ## Public domain
 
@@ -95,12 +112,17 @@ The API does not start with an invalid `Smtp` or `Notifications:Worker` configur
 
 ## First deploy checklist
 
-1. Create the PostgreSQL service and the Href.Core service (from this repository, root `Dockerfile`), with no public domain until the deployed version includes #53. Set the health check path of the Href.Core service to `/health`.
-2. Set `ConnectionStrings__DefaultConnection`, `Smtp__Username` and `Smtp__Password`. From v0.4.0 on, also generate the public domain (see [Public domain](#public-domain)) and set `Jwt__Issuer` to it, plus `Jwt__SigningKey__KeyId` and `Jwt__SigningKey__PrivateKeyPem` (see [JWT signing keys](#jwt-signing-keys)).
+1. Create the PostgreSQL service and the Href.Core service (from this repository, root `Dockerfile`), with no public domain before v0.4.0 (admin authentication). Set the health check path of the Href.Core service to `/health`.
+2. Set `ConnectionStrings__DefaultConnection`, `Smtp__Username` and `Smtp__Password`. From v0.4.0 on, also do the following:
+   - generate the public domain (see [Public domain](#public-domain)) and set `Jwt__Issuer` to it;
+   - set `Jwt__SigningKey__KeyId` and `Jwt__SigningKey__PrivateKeyPem` (see [JWT signing keys](#jwt-signing-keys));
+   - set the `Bootstrap__*` variables (see [First admin](#first-admin)).
 3. Deploy. In the logs, check that:
    - DbUp applied every migration (`0000_baseline.sql` up to the last `NNNN_*.sql`);
-   - the warning `SMTP credentials are not configured` does not appear.
-4. From inside the Railway private network (or a temporary private connection), call `GET /health`: it returns `200` with `Healthy`. `GET /.well-known/jwks.json` returns the key with the `kid` you set.
-5. Create an application (`POST /api/apps`), queue a test email with its credentials (`POST /api/notifications/email`) and check that it arrives.
+   - the warning `SMTP credentials are not configured` does not appear;
+   - from v0.4.0 on, `Bootstrap gave core admin access to user ...` appears.
+4. Call `GET /health`: it returns `200` with `Healthy`. `GET /.well-known/jwks.json` returns the key with the `kid` you set.
+5. Log in as the admin (see [First admin](#first-admin)). With the bearer token, create an application (`POST /api/apps`). Queue a test email with its credentials (`POST /api/notifications/email`) and check that it arrives.
+6. Remove the `Bootstrap__*` variables and redeploy.
 
 Keep this file in sync with `## Environment variables` in `SYSTEM_MAP.md` when a configuration key is added or changed.

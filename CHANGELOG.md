@@ -6,6 +6,21 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ### Agregado
 
+- Autenticación de los endpoints de admin con JWT (#53):
+  - **Rutas protegidas:** `/api/apps` (salvo `GET /api/apps/me`), permisos, roles y accesos por aplicación, `/api/users` (con las sesiones) y `/api/notifications/templates`. Exigen `Authorization: Bearer` con un access token de la aplicación reservada `core` (audiencia `core`, `typ: at+jwt`) que tenga el permiso `core.admin`.
+  - **Respuestas de error:**
+    - sin token, o con uno inválido, vencido, de otra audiencia o de otro tipo: `401 Auth.InvalidToken`;
+    - con un token válido sin `core.admin`: `403 Auth.AdminRequired`;
+    - las credenciales M2M no sirven en estas rutas.
+  - **Red de seguridad:** un test recorre todos los endpoints y falla si alguno no declara su acceso.
+  - **Auditoría:** las escrituras de admin registran como actor al usuario del token y como `app_key` a `core`.
+  - **Migración `0008_seed_core_admin.sql`:** crea la aplicación `core`, el permiso `core.admin` y el rol `admin`, con ids fijos.
+  - **Datos reservados:** `core` no se puede suspender, el permiso y el rol no se pueden borrar, y el rol no puede perder `core.admin`. Esos intentos devuelven `409 Applications.Reserved` / `Authorization.Reserved`.
+  - **Bootstrap del primer admin** (`Bootstrap__AdminEmail`, `Bootstrap__AdminPassword`, `Bootstrap__AdminFullName` y `Bootstrap__CoreClientSecret`), al arrancar:
+    - fija el secreto de `core`, que si no nadie conocería;
+    - si no hay ningún admin activo, crea el admin con el email verificado, o le da acceso a un usuario existente sin cambiar su contraseña, siempre con un advisory lock y auditado como `System`;
+    - con una configuración inválida, la API no arranca.
+  - **Paquete:** `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.15.
 - Claves de firma JWT (RS256) desde variables de entorno (`Modules/Auth/`, #22): sección `Jwt` con `Issuer`, `SigningKey:KeyId`, `SigningKey:PrivateKeyPem` (PEM PKCS#8 o PKCS#1, mínimo 2048 bits, se recomiendan 3072), `PreviousPublicKeys[]` para seguir validando tokens durante una rotación, `AccessTokenMinutes` (15, de 1 a 60) y `RefreshTokenDays` (30, de 1 a 365). Se valida al arrancar: fuera de Development la API no arranca sin clave, con un PEM que no se puede importar o de otro tipo (una clave pública como clave de firma, una privada como clave anterior), con una clave chica, con `kid` mal formados o repetidos, con un issuer que no es una URL `https` (se admite `http` solo en loopback) o que tiene ruta (las rutas `/.well-known` están en la raíz), o con duraciones fuera de rango; los mensajes nunca incluyen la clave. En Development sin clave se genera una clave efímera de 3072 bits y se loguea un warning (los tokens mueren al reiniciar).
 - `GET /.well-known/jwks.json` (anónimo): publica las claves públicas (la actual primero y después las anteriores) con su `kid`, solo `n` y `e`, con `Cache-Control: public, max-age=3600`. Un token firmado con la clave actual valida contra el JWK publicado y uno firmado con otra clave no.
 - `GET /.well-known/openid-configuration` (anónimo): devuelve solo `issuer` y `jwks_uri`, para que las aplicaciones satélite usen `AddJwtBearer(o => o.Authority = ...)` sin código propio (un test recorre el mismo descubrimiento que usa JwtBearer y valida un token del Core con las claves que encuentra).
@@ -16,7 +31,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
     - Las demás sesiones del usuario siguen activas.
   - **`GET /api/users/{id}/sessions`:** lista las sesiones activas con la aplicación, el inicio, la última rotación, el vencimiento, la IP y el user agent.
   - **`DELETE /api/users/{id}/sessions?appKey=`:** revoca todas las sesiones, o las de una aplicación, como `AdminRevoked`, audita `SESSIONS_REVOKED` y responde `200 { revokedSessions }`. Un `appKey` presente pero vacío devuelve `404` y nunca revoca todas.
-  - Estos dos endpoints de admin quedan públicos hasta #53.
+  - Estos dos endpoints requieren el token de admin de #53.
   - **Bloqueo de un usuario:** ahora revoca sus sesiones como `UserLocked` en la misma transacción.
   - **Concurrencia:** todas las escrituras de refresh tokens usan el mismo lock por usuario. El bloqueo de un usuario lo toma antes que la fila del usuario, en el mismo orden que el login, así que no se traban entre sí. Un refresh y una revocación simultáneos no dejan ninguna sesión viva.
   - **Limitación conocida:** un access token ya emitido sigue siendo válido hasta que vence (como máximo 15 minutos).
@@ -61,6 +76,7 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ### Documentación
 
+- `docs/instructions.md`: sección "First admin" (variables `Bootstrap__*`, login del admin y por qué hay que sacar las variables después). Se reemplaza la advertencia de mantener el servicio privado: queda solo para versiones anteriores a v0.4.0.
 - `docs/instructions.md`: variables `Jwt__*` para Railway; el issuer es el dominio público del servicio, que se genera recién con v0.4.0 (incluye #53). También explica cómo generar la clave de producción con OpenSSL, la rotación manual con `PreviousPublicKeys` y qué hacer si la clave se filtra. Las aplicaciones con JwtBearer refrescan las claves cada 12 horas o ante un `kid` desconocido; por eso, ante una filtración, hay que reiniciarlas.
 
 ## 0.3.0 - 2026-11-19
