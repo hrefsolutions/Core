@@ -35,4 +35,8 @@ public static class ApplicationErrors
     public static readonly Error NotFound = Error.NotFound(
         "Applications.NotFound",
         "The requested application was not found.");
+
+    public static readonly Error Reserved = Error.Conflict(
+        "Applications.Reserved",
+        "The reserved core application cannot be suspended or opened to self-registration.");
 }

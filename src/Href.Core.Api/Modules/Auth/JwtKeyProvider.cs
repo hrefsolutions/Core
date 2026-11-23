@@ -58,7 +58,23 @@ public sealed class JwtKeyProvider : IDisposable
         };
 
         JsonWebKeySet = new JsonWebKeySetResponse([ToPublicJsonWebKey(CurrentKeyId, signingRsa), .. previousKeys]);
+        ValidationKeys = JsonWebKeySet.Keys
+            .Select(key => (SecurityKey)new JsonWebKey
+            {
+                Kty = key.Kty,
+                Use = key.Use,
+                Alg = key.Alg,
+                Kid = key.Kid,
+                N = key.N,
+                E = key.E,
+            })
+            .ToList();
     }
+
+    /// <summary>
+    /// The published public keys (current first, then previous) as security keys, to validate the Core's own tokens.
+    /// </summary>
+    public IReadOnlyList<SecurityKey> ValidationKeys { get; }
 
     public string CurrentKeyId { get; }
 

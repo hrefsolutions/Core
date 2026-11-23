@@ -18,7 +18,7 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
     public async Task GetMe_WithValidAppKeyAndSecret_Returns200WithCurrentApplication()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"m2m-{Guid.NewGuid():N}"[..20];
 
         var createResponse = await client.PostAsJsonAsync(
@@ -49,7 +49,7 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
         await using var baseFactory = new ApiFactory(postgres.ConnectionString);
         await using var factory = baseFactory.WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<ILogEventSink>(sink)));
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"log-{Guid.NewGuid():N}"[..20];
 
         var createResponse = await client.PostAsJsonAsync(
@@ -84,7 +84,7 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
         await using var baseFactory = new ApiFactory(postgres.ConnectionString);
         await using var factory = baseFactory.WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<ILogEventSink>(sink)));
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var previousStaticLogger = Log.Logger;
         Log.Logger = new LoggerConfiguration().CreateLogger();
 
@@ -110,7 +110,7 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
     public async Task GetMe_WhenHeadersAreMissing_Returns401UnauthorizedProblemDetails()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
 
         var response = await client.GetAsync("/api/apps/me", TestContext.Current.CancellationToken);
 
@@ -125,7 +125,7 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
     public async Task GetMe_WithWrongSecretOrUnknownKey_Returns401WithIdenticalProblemDetails()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"auth-{Guid.NewGuid():N}"[..20];
 
         await client.PostAsJsonAsync(
@@ -161,7 +161,7 @@ public sealed class AppKeyAuthenticationIntegrationTests(PostgresFixture postgre
     public async Task GetMe_WhenApplicationIsSuspended_Returns403ForbiddenProblemDetails()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = $"susp-{Guid.NewGuid():N}"[..20];
 
         var createResponse = await client.PostAsJsonAsync(

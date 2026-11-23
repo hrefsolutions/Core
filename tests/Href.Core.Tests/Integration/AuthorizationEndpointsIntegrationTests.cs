@@ -18,7 +18,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Permissions_CreateGetListUpdate_WorkPerApplicationAndAreAudited()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var otherAppKey = await CreateAppAsync(client);
@@ -62,7 +62,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Permissions_RejectDuplicatesInvalidKeysAndUnknownTargets()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         await CreatePermissionAsync(client, appKey, "orders.read", null);
@@ -101,7 +101,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task DeletingPermission_RemovesItFromRolesAndAuditsEveryAffectedRole()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var read = await CreatePermissionAsync(client, appKey, "orders.read", null);
@@ -133,7 +133,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Roles_CreateWithPermissionsAndDefault_MovesTheDefaultAndAuditsBothRoles()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         await CreatePermissionAsync(client, appKey, "orders.read", null);
@@ -162,7 +162,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Roles_RejectUnknownOrForeignPermissionsDuplicatesAndInvalidLists()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var otherAppKey = await CreateAppAsync(client);
@@ -210,7 +210,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Roles_UpdateReplacePermissionsAndClearDefault_AreAuditedOnlyWhenSomethingChanges()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         await CreatePermissionAsync(client, appKey, "orders.read", null);
@@ -266,7 +266,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Roles_UpdateToDefault_MovesTheFlagFromThePreviousDefault()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var member = await CreateRoleAsync(client, appKey, "Member", true);
@@ -287,7 +287,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Roles_RenameToExistingNameIgnoringCase_Returns409AndKeepsTheName()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var appKey = await CreateAppAsync(client);
         await CreateRoleAsync(client, appKey, "Admin", false);
         var viewer = await CreateRoleAsync(client, appKey, "Viewer", false);
@@ -303,7 +303,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Roles_OfAnotherApplication_AreNotFound()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var otherAppKey = await CreateAppAsync(client);
@@ -322,7 +322,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Users_GrantChangeAndRevokeAccess_AreAuditedUnderTheApplication()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var admin = await CreateRoleAsync(client, appKey, "Admin", false);
@@ -361,7 +361,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Users_LockedUserCanStillBeGivenRoles()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var role = await CreateRoleAsync(client, appKey, "Member", false);
@@ -381,7 +381,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Users_WithForeignOrUnknownRolesOrUnknownUser_AreRejected()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var otherAppKey = await CreateAppAsync(client);
@@ -411,7 +411,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task Users_ListReturnsUsersWithAccessPagedByEmail()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var role = await CreateRoleAsync(client, appKey, "Member", false);
@@ -446,7 +446,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task DeletingRole_RemovesItFromAccessesAndAuditsEveryAffectedAccess()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var admin = await CreateRoleAsync(client, appKey, "Admin", false);
@@ -473,7 +473,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task ConcurrentDefaultRoleCreations_LeaveExactlyOneDefault()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
 
@@ -493,7 +493,7 @@ public sealed class AuthorizationEndpointsIntegrationTests(PostgresFixture postg
     public async Task ConcurrentGrantsForSameUser_CreateOneAccess()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         var cancellationToken = TestContext.Current.CancellationToken;
         var appKey = await CreateAppAsync(client);
         var role = await CreateRoleAsync(client, appKey, "Member", false);
