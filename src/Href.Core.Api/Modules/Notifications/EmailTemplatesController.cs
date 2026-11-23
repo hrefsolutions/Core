@@ -1,4 +1,5 @@
 using Href.Core.Api.Common.Web;
+using Href.Core.Api.Modules.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,7 +10,7 @@ namespace Href.Core.Api.Modules.Notifications;
 /// </summary>
 [ApiController]
 [Route("api/notifications/templates")]
-[AllowAnonymous]
+[Authorize(Policy = AdminAuthentication.PolicyName)]
 public sealed class EmailTemplatesController(EmailTemplateService templateService) : ControllerBase
 {
     private const int MaxRequestBodyBytes = NotificationsController.MaxRequestBodyBytes;

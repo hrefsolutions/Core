@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Auth;
 using Href.Core.Api.Modules.Authorization;
 using Href.Core.Api.Modules.Notifications;
 using Href.Core.Api.Modules.Notifications.Email;
@@ -20,10 +21,12 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.Services.AddSerilog((services, logger) => logger
-        .ReadFrom.Configuration(builder.Configuration)
-        .ReadFrom.Services(services)
-        .Enrich.FromLogContext());
+    builder.Services.AddSerilog(
+        (services, logger) => logger
+            .ReadFrom.Configuration(builder.Configuration)
+            .ReadFrom.Services(services)
+            .Enrich.FromLogContext(),
+        preserveStaticLogger: true);
 
     builder.Services.AddControllers();
     builder.Services.AddProblemDetails(options =>
@@ -54,21 +57,31 @@ try
     builder.Services.AddScoped<PermissionAdminService>();
     builder.Services.AddScoped<RoleAdminService>();
     builder.Services.AddScoped<ApplicationAccessService>();
+    builder.Services.AddScoped<AuthService>();
+    builder.Services.AddScoped<UserSessionsService>();
+    builder.Services.AddSingleton<DummyPasswordHash>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
     builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
     builder.Services.AddSmtpEmail(builder.Configuration);
     builder.Services.AddNotificationWorker(builder.Configuration);
+    builder.Services.AddJwtSigning(builder.Configuration);
     builder.Services
         .AddAuthentication()
         .AddScheme<AuthenticationSchemeOptions, AppKeyAuthenticationHandler>(
             AppKeyAuthentication.SchemeName,
-            _ => { });
+            _ => { })
+        .AddAdminBearer();
     builder.Services
         .AddAuthorizationBuilder()
         .AddPolicy(AppKeyAuthentication.PolicyName, policy => policy
             .AddAuthenticationSchemes(AppKeyAuthentication.SchemeName)
-            .RequireAuthenticatedUser());
+            .RequireAuthenticatedUser())
+        .AddPolicy(AdminAuthentication.PolicyName, policy => policy
+            .AddAuthenticationSchemes(AdminAuthentication.SchemeName)
+            .RequireAuthenticatedUser()
+            .RequireClaim(AccessTokenFactory.PermissionsClaimType, CoreApplication.AdminPermissionKey));
+    builder.Services.AddAdminBootstrap(builder.Configuration);
 
     var app = builder.Build();
 
@@ -76,7 +89,7 @@ try
 
     app.UseForwardedHeaders();
     app.UseMiddleware<CorrelationIdMiddleware>();
-    app.UseSerilogRequestLogging();
+    app.UseSerilogRequestLogging(options => options.Logger = app.Services.GetRequiredService<Serilog.ILogger>());
     app.UseExceptionHandler();
     app.UseStatusCodePages();
     app.UseAuthentication();

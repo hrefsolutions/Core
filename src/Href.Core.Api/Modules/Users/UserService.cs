@@ -3,6 +3,7 @@ using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Results;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Auth;
 using Href.Core.Api.Modules.Authorization;
 using Microsoft.AspNetCore.Identity;
 using NHibernate;
@@ -226,15 +227,21 @@ public sealed class UserService(
         return UserResponse.From(user);
     }
 
+    /// <summary>
+    /// Locks the user and, in the same transaction, revokes all its active sessions as <c>UserLocked</c>
+    /// (<c>USER_LOCKED</c>, then <c>SESSIONS_REVOKED</c> when at least one was revoked). The per-user refresh token lock
+    /// is taken before the row lock, in the same order as the login, so they cannot deadlock.
+    /// </summary>
     public Task<Result<UserResponse>> LockAsync(Guid id, LockUserRequest? request, CancellationToken cancellationToken) =>
         ChangeLockStateAsync(
             id,
             user => user.Lock(request?.Reason, timeProvider.GetUtcNow().UtcDateTime),
             AuditActions.UserLocked,
+            revokeSessions: true,
             cancellationToken);
 
     public Task<Result<UserResponse>> UnlockAsync(Guid id, CancellationToken cancellationToken) =>
-        ChangeLockStateAsync(id, user => user.Unlock(), AuditActions.UserUnlocked, cancellationToken);
+        ChangeLockStateAsync(id, user => user.Unlock(), AuditActions.UserUnlocked, revokeSessions: false, cancellationToken);
 
     /// <summary>
     /// Accepts only the exact enum names (<c>Active</c>, <c>Locked</c>); numeric or combined values are rejected.
@@ -267,9 +274,15 @@ public sealed class UserService(
         Guid id,
         Func<User, Result> change,
         string action,
+        bool revokeSessions,
         CancellationToken cancellationToken)
     {
         using var transaction = session.BeginTransaction();
+
+        if (revokeSessions)
+        {
+            await RefreshTokenWrites.LockUserAsync(session, id, cancellationToken);
+        }
 
         var user = await session.GetAsync<User>(id, LockMode.Upgrade, cancellationToken);
 
@@ -287,6 +300,28 @@ public sealed class UserService(
         }
 
         await auditService.RecordUserChangeAsync(action, before, UserAuditSnapshot.From(user), cancellationToken);
+
+        if (revokeSessions)
+        {
+            var revoked = await RefreshTokenWrites.RevokeActiveSessionsAsync(
+                session,
+                user.Id,
+                applicationId: null,
+                timeProvider.GetUtcNow().UtcDateTime,
+                RefreshTokenRevocationReason.UserLocked,
+                cancellationToken);
+
+            if (revoked > 0)
+            {
+                await auditService.RecordSessionsRevokedAsync(
+                    user.Id,
+                    appKey: null,
+                    RefreshTokenRevocationReason.UserLocked,
+                    revoked,
+                    cancellationToken);
+            }
+        }
+
         await session.FlushAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 

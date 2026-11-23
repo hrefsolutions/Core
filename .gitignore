@@ -45,6 +45,8 @@ coverage*.xml
 appsettings.*.local.json
 *.pfx
 *.p12
+*.pem
+*.key
 
 ## Claude Code
 .claude/worktrees/

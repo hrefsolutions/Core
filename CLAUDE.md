@@ -154,6 +154,7 @@ Errores que ya pasaron en este repo (revisión de v0.1.0, PR #67):
 - Chequear que algo no existe y después insertarlo no es atómico. La fuente de verdad es el índice único: se atrapa la violación (`23505`) y se devuelve el `Error` de dominio (409), no un 500.
 - Detrás del proxy de Railway, `RemoteIpAddress` es la IP del proxy si no se usa `UseForwardedHeaders`.
 - Un template de Serilog solo muestra en consola las propiedades que nombra (`{AppKey}`); agregar la propiedad al evento no alcanza para verla.
+- El `Log.Logger` estático de Serilog es global al proceso: en los tests de integración varios hosts lo pisan y lo cierran. Nada de la API escribe en él salvo el arranque y el error fatal de `Program.cs`. Los middlewares de Serilog reciben el logger del contenedor de DI (`UseSerilogRequestLogging(o => o.Logger = ...)`, `AddSerilog(..., preserveStaticLogger: true)`); de lo contrario los tests que capturan logs fallan de forma intermitente.
 
 ## Releases
 

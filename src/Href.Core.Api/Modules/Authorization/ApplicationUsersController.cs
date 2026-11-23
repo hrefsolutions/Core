@@ -1,4 +1,6 @@
 using Href.Core.Api.Common.Web;
+using Href.Core.Api.Modules.Auth;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Href.Core.Api.Modules.Authorization;
@@ -8,6 +10,7 @@ namespace Href.Core.Api.Modules.Authorization;
 /// </summary>
 [ApiController]
 [Route("api/apps/{appKey}/users")]
+[Authorize(Policy = AdminAuthentication.PolicyName)]
 public sealed class ApplicationUsersController(ApplicationAccessService accessService) : ControllerBase
 {
     [HttpGet]

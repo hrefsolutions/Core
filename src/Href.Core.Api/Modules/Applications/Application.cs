@@ -124,6 +124,25 @@ public partial class Application : Entity, IAuditableEntity
         return plainSecret;
     }
 
+    /// <summary>
+    /// Sets a client secret chosen outside the API (the admin bootstrap of the reserved <c>core</c> application). Returns
+    /// <c>false</c> and changes nothing when the secret is already the current one.
+    /// </summary>
+    public virtual bool SetClientSecret(string plainSecret, TimeProvider timeProvider)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(plainSecret);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        if (VerifySecret(plainSecret))
+        {
+            return false;
+        }
+
+        ClientSecretHash = ClientSecretGenerator.Hash(plainSecret);
+        ClientSecretRotatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        return true;
+    }
+
     public virtual bool VerifySecret(string? plainSecret) =>
         ClientSecretGenerator.Verify(plainSecret, ClientSecretHash);
 
