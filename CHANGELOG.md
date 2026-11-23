@@ -11,6 +11,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
   - Fuera de `Development`, la consola escribe una línea JSON por evento (`time`, `level`, `message`, `exception` y cada propiedad como atributo), el formato de logs estructurados de Railway. Los saltos de línea quedan escapados, así que un path con `%0A` ya no puede agregar una línea de log falsa, y un stack trace es una sola entrada. En `Development` sigue el formato de texto.
   - El sink de consola pasó de `appsettings.json` al código (`Common/Logging/ConsoleLogging`).
 
+### Documentación
+
+- `SECURITY.md`: política de seguridad. Indica que solo el último release recibe fixes y que una vulnerabilidad se reporta en privado con el reporte privado de GitHub (pestaña Security → Report a vulnerability), nunca en un issue público. También fija los plazos de respuesta (5 días hábiles para el acuse de recibo y 15 para la evaluación) y el alcance.
+
 ## 0.4.0 - 2026-11-23
 
 ### Agregado
