@@ -124,4 +124,4 @@ docker run --rm -p 8080:8080 --env-file .env.local href-core
 
 ## Contributing
 
-Branching, commits, PRs and releases: see `CLAUDE.md`. Changes: `CHANGELOG.md`.
+Branching, commits, PRs and releases: see `CLAUDE.md` (it also describes the CI checks). Changes: `CHANGELOG.md`. Protection of `main` (production) and `develop`: [`docs/branch-protection.md`](docs/branch-protection.md).

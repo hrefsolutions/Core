@@ -79,6 +79,24 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 - `docs/instructions.md`: sección "First admin" (variables `Bootstrap__*`, login del admin y por qué hay que sacar las variables después). Se reemplaza la advertencia de mantener el servicio privado: queda solo para versiones anteriores a v0.4.0.
 - `docs/instructions.md`: variables `Jwt__*` para Railway; el issuer es el dominio público del servicio, que se genera recién con v0.4.0 (incluye #53). También explica cómo generar la clave de producción con OpenSSL, la rotación manual con `PreviousPublicKeys` y qué hacer si la clave se filtra. Las aplicaciones con JwtBearer refrescan las claves cada 12 horas o ante un `kid` desconocido; por eso, ante una filtración, hay que reiniciarlas.
 
+### Infraestructura
+
+- CI endurecido (`.github/workflows/ci.yml`), con jobs en paralelo y acciones fijadas por SHA:
+  - **Reglas del repositorio en cada PR:**
+    - falla si se edita, borra o renombra una migración que ya existe en la rama base;
+    - falla si el PR no toca `CHANGELOG.md`, salvo los PRs de Dependabot.
+  - **Reglas de release, solo en PRs a `main` (producción):**
+    - el origen tiene que ser `develop`;
+    - si cambia `<Version>`, tiene que subir;
+    - `CHANGELOG.md` tiene que tener la sección `## X.Y.Z - AAAA-MM-DD` y una `## Próxima versión` vacía;
+    - el tag no puede existir.
+  - **Paquetes NuGet con vulnerabilidades conocidas:** bloquean hacia `main` y solo avisan en `develop`.
+  - **Escaneo de la imagen Docker con Trivy** (HIGH/CRITICAL con fix disponible): bloquea hacia `main` y solo avisa en `develop`.
+  - **Resultados de tests:** se generan en TRX y, si fallan, se suben como artifact junto con los dumps de cuelgues.
+  - **Push a `develop`:** el CI también corre en cada push, no solo en `main`.
+- CodeQL (`.github/workflows/codeql.yml`): análisis `security-extended` de C# en cada PR, en cada push a `main` y `develop`, y todos los lunes.
+- `docs/branch-protection.md`: las reglas de protección de `main` y `develop` (checks requeridos, sin push directo, CodeQL bloqueante) y los comandos `gh` para aplicarlas. Son configuración del repositorio y las aplica un admin.
+
 ## 0.3.0 - 2026-11-19
 
 ### Agregado

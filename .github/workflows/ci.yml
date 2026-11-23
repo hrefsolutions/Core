@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -12,16 +12,17 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
+env:
+  STRICT: ${{ github.base_ref == 'main' || github.ref == 'refs/heads/main' }}
 
-      - uses: actions/setup-dotnet@v6
+jobs:
+  repository-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          global-json-file: global.json
+          fetch-depth: 0
 
       - name: Code rules (no inline comments, no U+2028/U+2029)
         run: |
@@ -38,14 +39,147 @@ jobs:
           fi
           [ -z "$inline" ] && [ -z "$separators" ]
 
+      - name: Merged migrations are never edited
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          changed=$(git diff --name-status --diff-filter=MDR "origin/$BASE_REF...HEAD" -- src/Href.Core.Api/Database/Migrations/)
+          if [ -n "$changed" ]; then
+            echo "::error::A migration that already exists in $BASE_REF was modified, deleted or renamed. Merged scripts are forward-only (CLAUDE.md): add a new NNNN_description.sql instead."
+            echo "$changed"
+            exit 1
+          fi
+
+      - name: CHANGELOG.md updated
+        if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git diff --quiet "origin/$BASE_REF...HEAD" -- CHANGELOG.md; then
+            echo "::error::Every PR adds an entry to CHANGELOG.md under '## Próxima versión' (CLAUDE.md)."
+            exit 1
+          fi
+
+  release-rules:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Releases come only from develop
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD_REF" != "develop" ]; then
+            echo "::error::Pull requests to main must come from develop (CLAUDE.md); this one comes from '$HEAD_REF'."
+            exit 1
+          fi
+
+      - name: Version bump and CHANGELOG release section
+        run: |
+          csproj=src/Href.Core.Api/Href.Core.Api.csproj
+          new=$(grep -oP '(?<=<Version>)[^<]+' "$csproj")
+          old=$(git show "origin/main:$csproj" | grep -oP '(?<=<Version>)[^<]+')
+
+          if [ "$new" = "$old" ]; then
+            echo "::notice::Release without a version bump ($new): no release section is required."
+            exit 0
+          fi
+
+          if ! [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::<Version> '$new' is not MAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          if [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -1)" != "$new" ]; then
+            echo "::error::<Version> goes from $old to $new; a release must increase it."
+            exit 1
+          fi
+
+          if ! grep -qE "^## ${new//./\\.} - [0-9]{4}-[0-9]{2}-[0-9]{2}\$" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $new - YYYY-MM-DD' section."
+            exit 1
+          fi
+
+          if ! grep -q '^## Próxima versión$' CHANGELOG.md; then
+            echo "::error::CHANGELOG.md must keep an empty '## Próxima versión' section above the release."
+            exit 1
+          fi
+
+          pending=$(awk '/^## Próxima versión$/ { inside = 1; next } /^## / { if (inside) exit } inside && NF { print }' CHANGELOG.md)
+          if [ -n "$pending" ]; then
+            echo "::error::'## Próxima versión' must be empty in a release; move its entries into '## $new'."
+            echo "$pending"
+            exit 1
+          fi
+
+          if [ -n "$(git ls-remote --tags origin "refs/tags/v$new")" ]; then
+            echo "::error::Tag v$new already exists."
+            exit 1
+          fi
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
       - name: Restore
         run: dotnet restore Href.Core.sln
+
+      - name: Vulnerable packages (blocking toward main)
+        run: |
+          dotnet list Href.Core.sln package --vulnerable --include-transitive --format json > vulnerable.json
+          count=$(jq '[.projects[]?.frameworks[]? | ((.topLevelPackages // []) + (.transitivePackages // []))[]] | length' vulnerable.json)
+
+          if [ "$count" -gt 0 ]; then
+            dotnet list Href.Core.sln package --vulnerable --include-transitive
+            if [ "$STRICT" = "true" ]; then
+              echo "::error::$count vulnerable package(s). Update them before releasing to main."
+              exit 1
+            fi
+            echo "::warning::$count vulnerable package(s). They block the release to main."
+          fi
 
       - name: Build (typecheck, warnings as errors)
         run: dotnet build Href.Core.sln --no-restore -c Release -warnaserror
 
       - name: Test
-        run: dotnet test Href.Core.sln --no-build -c Release --blame-hang-timeout 5m
+        run: >
+          dotnet test Href.Core.sln --no-build -c Release
+          --blame-hang-timeout 5m
+          --logger "trx;LogFilePrefix=results"
+          --results-directory TestResults
+
+      - name: Upload test results and hang dumps
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/
+          retention-days: 14
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Docker image (same Dockerfile Railway builds)
         run: docker build --tag href-core:ci .
+
+      - name: Image vulnerabilities (blocking toward main)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: href-core:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: ${{ env.STRICT == 'true' && '1' || '0' }}
