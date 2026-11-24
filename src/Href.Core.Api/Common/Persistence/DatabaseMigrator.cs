@@ -27,10 +27,18 @@ public static class DatabaseMigrator
         if (!ShouldMigrateOnStartup(configuration))
         {
             logger.LogInformation("Database migrations on startup are disabled ({ConfigKey}=false)", MigrateOnStartupKey);
+
+            if (!string.IsNullOrWhiteSpace(configuration[DatabaseRuntimeRole.RoleKey]))
+            {
+                logger.LogWarning(
+                    "{RoleKey} is set but migrations are disabled, so no privileges are granted to the runtime role on this startup",
+                    DatabaseRuntimeRole.RoleKey);
+            }
+
             return;
         }
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = DatabaseRuntimeRole.GetOwnerConnectionString(configuration);
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -38,6 +46,13 @@ public static class DatabaseMigrator
         }
 
         Migrate(connectionString, logger, ensureDatabase: environment.IsDevelopment());
+
+        var runtimeRole = configuration[DatabaseRuntimeRole.RoleKey];
+
+        if (!string.IsNullOrWhiteSpace(runtimeRole))
+        {
+            DatabaseRuntimeRole.GrantPrivileges(connectionString, runtimeRole, logger);
+        }
     }
 
     public static void Migrate(

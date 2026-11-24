@@ -1,5 +1,7 @@
 using Href.Core.Api.Common.Results;
+using Href.Core.Api.Modules.Audit;
 using Href.Core.Api.Modules.Auth;
+using NHibernate;
 using NHibernate.Linq;
 using Npgsql;
 using ISession = NHibernate.ISession;
@@ -7,9 +9,10 @@ using ISession = NHibernate.ISession;
 namespace Href.Core.Api.Modules.Applications;
 
 /// <summary>
-/// Orchestrates application persistence and transactions over <see cref="ISession"/>.
+/// Orchestrates application persistence and transactions over <see cref="ISession"/>. Every write locks the application
+/// row (<c>SELECT ... FOR UPDATE</c>) and records its <c>APPLICATION_*</c> audit entry in the same transaction.
 /// </summary>
-public sealed class ApplicationService(ISession session, TimeProvider timeProvider)
+public sealed class ApplicationService(ISession session, TimeProvider timeProvider, IAuditService auditService)
 {
     private const string AppKeyUniqueIndexName = "ux_applications_app_key";
 
@@ -86,6 +89,11 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
         try
         {
             await session.SaveAsync(application, cancellationToken);
+            await auditService.RecordApplicationChangeAsync(
+                AuditActions.ApplicationCreated,
+                before: null,
+                after: ApplicationAuditSnapshot.From(application),
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (Exception exception) when (IsAppKeyUniqueViolation(exception))
@@ -126,7 +134,7 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
     {
         using var transaction = session.BeginTransaction();
 
-        var application = await FindByAppKeyAsync(appKey, cancellationToken);
+        var application = await FindByAppKeyAsync(appKey, cancellationToken, lockForUpdate: true);
 
         if (application is null)
         {
@@ -138,6 +146,7 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
             return ApplicationErrors.Reserved;
         }
 
+        var before = ApplicationAuditSnapshot.From(application);
         var updateResult = application.Update(request.Name, request.Description, request.AllowSelfRegistration);
 
         if (updateResult.IsFailure)
@@ -145,6 +154,14 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
             return updateResult.Error;
         }
 
+        var after = ApplicationAuditSnapshot.From(application);
+
+        if (after == before)
+        {
+            return ApplicationResponse.From(application);
+        }
+
+        await auditService.RecordApplicationChangeAsync(AuditActions.ApplicationUpdated, before, after, cancellationToken);
         await session.FlushAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -163,7 +180,7 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
 
         using var transaction = session.BeginTransaction();
 
-        var application = await FindByAppKeyAsync(appKey, cancellationToken);
+        var application = await FindByAppKeyAsync(appKey, cancellationToken, lockForUpdate: true);
 
         if (application is null)
         {
@@ -175,6 +192,7 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
             return ApplicationErrors.Reserved;
         }
 
+        var before = ApplicationAuditSnapshot.From(application);
         var statusResult = targetStatus switch
         {
             ApplicationStatus.Active => application.Activate(),
@@ -187,6 +205,11 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
             return statusResult.Error;
         }
 
+        await auditService.RecordApplicationChangeAsync(
+            AuditActions.ApplicationStatusChanged,
+            before,
+            ApplicationAuditSnapshot.From(application),
+            cancellationToken);
         await session.FlushAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -199,15 +222,21 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
     {
         using var transaction = session.BeginTransaction();
 
-        var application = await FindByAppKeyAsync(appKey, cancellationToken);
+        var application = await FindByAppKeyAsync(appKey, cancellationToken, lockForUpdate: true);
 
         if (application is null)
         {
             return ApplicationErrors.NotFound;
         }
 
+        var before = ApplicationAuditSnapshot.From(application);
         var clientSecret = application.RotateSecret(timeProvider);
 
+        await auditService.RecordApplicationChangeAsync(
+            AuditActions.ApplicationSecretRotated,
+            before,
+            ApplicationAuditSnapshot.From(application),
+            cancellationToken);
         await session.FlushAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -245,7 +274,22 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
         return false;
     }
 
-    private async Task<Application?> FindByAppKeyAsync(string appKey, CancellationToken cancellationToken) =>
-        await session.Query<Application>()
-            .FirstOrDefaultAsync(application => application.AppKey == appKey, cancellationToken);
+    private async Task<Application?> FindByAppKeyAsync(
+        string appKey,
+        CancellationToken cancellationToken,
+        bool lockForUpdate = false)
+    {
+        var query = session.Query<Application>();
+
+        if (lockForUpdate)
+        {
+            query = query.WithLock(LockMode.Upgrade);
+        }
+
+        var rows = await query
+            .Where(application => application.AppKey == appKey)
+            .ToListAsync(cancellationToken);
+
+        return rows.SingleOrDefault();
+    }
 }

@@ -31,6 +31,35 @@ public sealed class ResultExtensionsTests
         Assert.Equal("Apps.Duplicate", problem.Extensions["errorCode"]);
     }
 
+    [Theory]
+    [InlineData(90.0, "90")]
+    [InlineData(0.2, "1")]
+    [InlineData(61.4, "62")]
+    public void ToProblem_TooManyRequests_Returns429WithRetryAfterInWholeSeconds(double retryAfterSeconds, string expectedHeader)
+    {
+        var controller = CreateController();
+        var error = Error.TooManyRequests("RateLimit.Exceeded", "Too many attempts.", TimeSpan.FromSeconds(retryAfterSeconds));
+
+        var actionResult = error.ToProblem(controller);
+
+        Assert.Equal(StatusCodes.Status429TooManyRequests, actionResult.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(actionResult.Value);
+        Assert.Equal("Too many requests.", problem.Title);
+        Assert.Equal("https://tools.ietf.org/html/rfc6585#section-4", problem.Type);
+        Assert.Equal("RateLimit.Exceeded", problem.Extensions["errorCode"]);
+        Assert.Equal(expectedHeader, controller.Response.Headers.RetryAfter.ToString());
+    }
+
+    [Fact]
+    public void ToProblem_OtherErrorTypes_DoNotSetRetryAfter()
+    {
+        var controller = CreateController();
+
+        _ = new Error("Apps.Duplicate", "Application already exists.", ErrorType.Conflict).ToProblem(controller);
+
+        Assert.False(controller.Response.Headers.ContainsKey("Retry-After"));
+    }
+
     [Fact]
     public void ToProblem_OnSuccessResult_Throws()
     {

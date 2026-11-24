@@ -64,6 +64,7 @@ public enum LoginFailureReason
     EmailNotVerified,
     UserLocked,
     NoAccessToApplication,
+    Throttled,
 }
 
 /// <summary>
