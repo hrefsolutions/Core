@@ -8,14 +8,23 @@ namespace Href.Core.Api.Modules.Users;
 
 /// <summary>
 /// Admin endpoints for global users. There is no DELETE: users are locked, never deleted.
-/// Public until admin authentication exists (#53).
+/// Requires the <c>Admin</c> policy (bearer token with <c>core.admin</c>).
 /// </summary>
 [ApiController]
 [Route("api/users")]
 [Authorize(Policy = AdminAuthentication.PolicyName)]
 public sealed class UsersController(UserService userService) : ControllerBase
 {
+    /// <summary>
+    /// Creates a global user with the email already verified.
+    /// </summary>
+    /// <response code="201">The created user; `Location` points to `GET /api/users/{id}`.</response>
+    /// <response code="400">Validation failed: `Users.InvalidEmail`, `Users.InvalidFullName` or `Users.WeakPassword`; a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
+    /// <response code="409">`Users.EmailTaken` (any case).</response>
     [HttpPost]
+    [ProducesResponseType<UserResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
     {
         var result = await userService.CreateAsync(request, cancellationToken);
@@ -25,7 +34,14 @@ public sealed class UsersController(UserService userService) : ControllerBase
             : CreatedAtAction(nameof(GetById), new { id = result.Value.Id }, result.Value);
     }
 
+    /// <summary>
+    /// Lists users ordered by <c>email</c>, optionally filtered by <c>search</c> and <c>status</c>.
+    /// </summary>
+    /// <response code="200">`{ items, page, pageSize, totalCount }`.</response>
+    /// <response code="400">`Users.InvalidSearch`, `Users.InvalidStatus`, `Users.InvalidPage` or `Users.InvalidPageSize`; unparsable numbers return the framework `ValidationProblemDetails`.</response>
     [HttpGet]
+    [ProducesResponseType<UserPageResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> List(
         [FromQuery] string? search,
         [FromQuery] string? status,
@@ -40,7 +56,14 @@ public sealed class UsersController(UserService userService) : ControllerBase
             : Ok(result.Value);
     }
 
+    /// <summary>
+    /// Returns a user with the applications it can access and its roles in each one.
+    /// </summary>
+    /// <response code="200">The user plus `applications`.</response>
+    /// <response code="404">`Users.NotFound`; a non-GUID id returns a plain `404` (route constraint).</response>
     [HttpGet("{id:guid}")]
+    [ProducesResponseType<UserDetailResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await userService.GetByIdAsync(id, cancellationToken);
@@ -50,7 +73,18 @@ public sealed class UsersController(UserService userService) : ControllerBase
             : Ok(result.Value);
     }
 
+    /// <summary>
+    /// Replaces the <c>fullName</c> and <c>email</c> of a user; a new email clears the verification.
+    /// </summary>
+    /// <response code="200">The updated user.</response>
+    /// <response code="400">`Users.InvalidEmail` or `Users.InvalidFullName` (nothing changes); a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
+    /// <response code="404">`Users.NotFound`.</response>
+    /// <response code="409">`Users.EmailTaken`.</response>
     [HttpPut("{id:guid}")]
+    [ProducesResponseType<UserResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateUserRequest request, CancellationToken cancellationToken)
     {
         var result = await userService.UpdateAsync(id, request, cancellationToken);
@@ -60,7 +94,18 @@ public sealed class UsersController(UserService userService) : ControllerBase
             : Ok(result.Value);
     }
 
+    /// <summary>
+    /// Locks a user (optional body <c>{ reason }</c>) and revokes every active session of the user.
+    /// </summary>
+    /// <response code="200">The locked user.</response>
+    /// <response code="400">`Users.InvalidLockReason`.</response>
+    /// <response code="404">`Users.NotFound`.</response>
+    /// <response code="409">`Users.AlreadyLocked`.</response>
     [HttpPost("{id:guid}/lock")]
+    [ProducesResponseType<UserResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Lock(
         Guid id,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] LockUserRequest? request,
@@ -73,7 +118,16 @@ public sealed class UsersController(UserService userService) : ControllerBase
             : Ok(result.Value);
     }
 
+    /// <summary>
+    /// Unlocks a user.
+    /// </summary>
+    /// <response code="200">The unlocked user.</response>
+    /// <response code="404">`Users.NotFound`.</response>
+    /// <response code="409">`Users.NotLocked`.</response>
     [HttpPost("{id:guid}/unlock")]
+    [ProducesResponseType<UserResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Unlock(Guid id, CancellationToken cancellationToken)
     {
         var result = await userService.UnlockAsync(id, cancellationToken);
