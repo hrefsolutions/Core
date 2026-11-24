@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.6.0 - 2026-11-24
+
 ### Agregado
 
 - Documentación interactiva de la API y guía de integración (#31):
