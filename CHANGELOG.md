@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.5.0 - 2026-11-23
+
 ### Agregado
 
 - Registro propio y verificación de email (#26). Los llama el backend satélite con sus credenciales M2M:
