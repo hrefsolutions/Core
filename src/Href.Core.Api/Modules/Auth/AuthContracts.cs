@@ -12,6 +12,10 @@ public sealed record VerifyEmailRequest(string? Token);
 
 public sealed record ResendVerificationRequest(string? Email, string? VerifyEmailUrl);
 
+public sealed record ForgotPasswordRequest(string? Email, string? ResetPasswordUrl);
+
+public sealed record ResetPasswordRequest(string? Token, string? NewPassword);
+
 public sealed record TokenResponse(
     string AccessToken,
     string TokenType,

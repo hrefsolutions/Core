@@ -22,6 +22,14 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
   - **URLs de las páginas** (`verifyEmailUrl`): se validan antes de ponerlas en un email firmado por el Core. Tienen que ser `https` (`http` solo en localhost), sin usuario ni contraseña, sin fragmento, de hasta 2048 caracteres (también una vez escapada) y sin un parámetro `token` propio, separado con `&` o con `;`. Si no, devuelven `400 Auth.InvalidCallbackUrl`.
   - **Entidad `UserToken`** y migración `0009_create_user_tokens.sql`: tokens de un solo uso atados al usuario y a la aplicación; se guarda solo su SHA-256. Queda lista para el reset de contraseña de #27.
   - **Limitación conocida:** el cuerpo del email encolado, con el link y el token, queda en texto plano en `notifications` hasta que se limpie. Borrar esos cuerpos después del envío queda como mejora a futuro.
+- Recuperación de contraseña (#27). La llama el backend satélite con sus credenciales M2M:
+  - **`POST /api/auth/forgot-password`** (`{ email, resetPasswordUrl }`): responde siempre `202`, salvo `400 Auth.InvalidCallbackUrl` si la URL de la página es inválida (mismas reglas que `verifyEmailUrl`).
+    - Solo envía si el usuario existe, está activo y tiene acceso a la aplicación.
+    - Revoca los tokens de reset anteriores del usuario, de cualquier aplicación, emite uno nuevo válido por 30 minutos, encola la plantilla `reset-password` y audita `PASSWORD_RESET_REQUESTED`.
+  - **`POST /api/auth/reset-password`** (`{ token, newPassword }`): responde `204`.
+    - Guarda la contraseña nueva, regenera el security stamp, consume el token y revoca todas las sesiones del usuario en todas las aplicaciones (`PasswordReset`). Audita `PASSWORD_RESET` y, si había sesiones activas, `SESSIONS_REVOKED`.
+    - Una contraseña débil devuelve `400 Users.WeakPassword` sin consumir el token. Un token usado, vencido, revocado, de otra aplicación o de verificación, o de un usuario bloqueado, devuelve `400 Auth.InvalidOneTimeToken` (el issue pedía `Auth.InvalidToken`, que es el `401` de admin).
+    - Toma los locks en el mismo orden que el login: el advisory lock de refresh tokens, la fila del usuario y la del token. Dos usos simultáneos del mismo token dan un `204` y un `400`.
 
 ## 0.4.0 - 2026-11-23
 

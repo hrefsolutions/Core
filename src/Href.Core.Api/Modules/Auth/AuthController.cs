@@ -65,6 +65,38 @@ public sealed class AuthController(AuthService authService, AccountService accou
     }
 
     /// <summary>
+    /// Emails a password reset link when the account can receive one. Always 202, except for an invalid page URL.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetApplication(out var applicationId, out var appKey))
+        {
+            return AppKeyAuthentication.InvalidCredentialsError.ToProblem(this);
+        }
+
+        var result = await accountService.ForgotPasswordAsync(applicationId, appKey, request, GetCorrelationId(), cancellationToken);
+
+        return result.IsFailure ? result.ToProblem(this) : Accepted();
+    }
+
+    /// <summary>
+    /// Sets a new password with the token from the reset link and ends every session of the user.
+    /// </summary>
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetApplication(out var applicationId, out _))
+        {
+            return AppKeyAuthentication.InvalidCredentialsError.ToProblem(this);
+        }
+
+        var result = await accountService.ResetPasswordAsync(applicationId, request, cancellationToken);
+
+        return result.IsFailure ? result.ToProblem(this) : NoContent();
+    }
+
+    /// <summary>
     /// Logs a user in for the calling application (taken from the M2M credentials) and returns an access token and a refresh token.
     /// </summary>
     [HttpPost("login")]
