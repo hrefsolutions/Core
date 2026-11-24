@@ -1,4 +1,5 @@
 using Href.Core.Api.Common.Logging;
+using Href.Core.Api.Common.OpenApi;
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
@@ -31,6 +32,7 @@ try
         preserveStaticLogger: true);
 
     builder.Services.AddControllers();
+    builder.Services.AddCoreOpenApi();
     builder.Services.AddProblemDetails(options =>
         options.CustomizeProblemDetails = context =>
         {
@@ -64,6 +66,13 @@ try
     builder.Services.AddScoped<AccountService>();
     builder.Services.AddSingleton<DummyPasswordHash>();
     builder.Services.AddScoped<IAuditService, AuditService>();
+    builder.Services.AddScoped<AuditLogQueryService>();
+    builder.Services.AddScoped<AuditLogExportService>();
+    builder.Services
+        .AddOptions<AuditLogExportOptions>()
+        .Bind(builder.Configuration.GetSection(AuditLogExportOptions.SectionName))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
     builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
     builder.Services.AddSmtpEmail(builder.Configuration);
@@ -101,6 +110,7 @@ try
     app.UseMiddleware<AppKeyLogContextMiddleware>();
     app.UseRateLimiter();
     app.MapControllers();
+    app.MapCoreOpenApi();
 
     app.Run();
     return 0;
