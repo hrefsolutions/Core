@@ -4,6 +4,33 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.6.1 - 2026-11-24
+
+Cierra los hallazgos de la auditoría E2E de v0.6.0 (#115, #116, #117, #118, #119).
+
+### Agregado
+
+- Rol de base de datos con mínimo privilegio (#117):
+  - **Variables nuevas, opcionales:** `ConnectionStrings__Migrations` (la conexión dueña del esquema, que corre las migraciones; si falta se usa `DefaultConnection`) y `Database__RuntimeRole` (el rol con el que se conecta la API).
+  - **Permisos:** con el rol configurado, al arrancar y después de las migraciones se le otorga lectura y escritura sobre las tablas, solo `SELECT` e `INSERT` sobre `audit_logs` y nada sobre `schemaversions`, y nunca `TRUNCATE`. Se aplica en cada arranque, así que cubre también las tablas nuevas.
+  - **Validación:** la API no arranca si el nombre no es un identificador en minúsculas, si el rol no existe, si es superusuario, si es el mismo usuario dueño o si es dueño de `audit_logs` (directamente o como miembro del rol dueño). Con `Database__RuntimeRole` configurado y las migraciones apagadas, se registra un warning porque no se otorga nada.
+  - **Aviso:** fuera de Development se registra un warning si la API se conecta como superusuario o como dueña de `audit_logs`.
+  - **Pasos en Railway:** en `docs/instructions.md` (`## Least-privilege database role`).
+- Freno de logins por cuenta (#118): `POST /api/auth/login` admite 20 intentos cada 15 minutos por email, sumando todas las aplicaciones e IPs.
+  - **Al pasarse:** responde `429 RateLimit.Exceeded` con `Retry-After`, antes de verificar la contraseña, igual para emails que existen y que no, y registra `LOGIN_FAILED` con motivo `Throttled` (con el id del usuario si el email existe).
+  - **Reinicio:** una contraseña correcta libera la cuenta.
+  - **Alcance:** el contador vive en memoria y vale para una sola instancia, como los otros límites.
+  - **Compromiso aceptado:** quien conozca un email puede bloquear su login hasta 15 minutos.
+  - **Detalle técnico:** `Error` suma el tipo `TooManyRequests` y un `RetryAfter`, que `ToProblem` convierte en `429` con el header.
+
+### Corregido
+
+- Los cambios de aplicaciones no quedaban en la auditoría (#115). Ahora `POST /api/apps`, `PUT /api/apps/{appKey}`, `PATCH /api/apps/{appKey}/status` y `POST /api/apps/{appKey}/secret/rotate` registran `APPLICATION_CREATED`, `APPLICATION_UPDATED`, `APPLICATION_STATUS_CHANGED` y `APPLICATION_SECRET_ROTATED`.
+  - **Contenido:** cada registro se graba en la misma transacción que el cambio, con el admin como actor, el `app_key` de la aplicación afectada y el antes y el después, sin el secreto ni su hash. Un `PUT` sin cambios no registra nada.
+  - **Bloqueo:** esas escrituras leen la fila con `FOR UPDATE`, para que el "antes" sea correcto aunque lleguen dos requests a la vez.
+- `TRUNCATE audit_logs` borraba todo el registro, porque el trigger solo bloqueaba `UPDATE` y `DELETE` (#116). La migración `0011_block_audit_logs_truncate.sql` agrega un trigger `BEFORE TRUNCATE` que lo rechaza para cualquier usuario. Un superusuario todavía puede borrar el trigger o desactivarlo; por eso #117 hace que la API corra con un rol sin esos privilegios.
+- `SYSTEM_MAP.md` decía que la auditoría de templates tenía actor `Anonymous` y listaba `APPLICATION_*` como si se registrara (#119).
+
 ## 0.6.0 - 2026-11-24
 
 ### Agregado

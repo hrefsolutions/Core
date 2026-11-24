@@ -23,6 +23,7 @@ public sealed class AuthService(
     AccessTokenFactory accessTokenFactory,
     IOptions<JwtOptions> jwtOptions,
     IAuditService auditService,
+    LoginAttemptThrottle loginAttemptThrottle,
     TimeProvider timeProvider)
 {
     public const string TokenType = "Bearer";
@@ -35,7 +36,11 @@ public sealed class AuthService(
     /// reported only after a correct password. The password is verified outside any transaction or lock (on a user that is
     /// then evicted), so a password spray cannot hold the per-user lock or a connection; the transaction then takes the
     /// lock, loads the user again <c>FOR UPDATE</c> (serialized with the admin user writes) and verifies again only if the
-    /// stored hash changed in between or needs an upgrade.
+    /// stored hash changed in between or needs an upgrade. Before any of it, a well-formed email takes one attempt slot of
+    /// <see cref="LoginAttemptThrottle"/>; with no slot left the login returns <see cref="AuthErrors.LoginAttemptsExceeded"/>
+    /// (<c>429</c>) without checking the password, for existing and unknown emails alike, and records <c>LOGIN_FAILED</c>
+    /// with reason <c>Throttled</c> (with the user id when the email exists, read by a scalar query for the audit only).
+    /// A correct password, confirmed again inside the transaction when needed, releases the account.
     /// </summary>
     public async Task<Result<TokenResponse>> LoginAsync(
         Guid applicationId,
@@ -72,6 +77,17 @@ public sealed class AuthService(
             return LoginAttempt.Failed(AuthErrors.InvalidCredentials, null, LoginFailureReason.UnknownEmail);
         }
 
+        if (loginAttemptThrottle.TryAcquire(email.Value) is { } retryAfter)
+        {
+            var throttledUserIds = await session.Query<User>()
+                .Where(existing => existing.Email == email.Value)
+                .Select(existing => existing.Id)
+                .ToListAsync(cancellationToken);
+            Guid? throttledUserId = throttledUserIds.Count == 1 ? throttledUserIds[0] : null;
+
+            return LoginAttempt.Failed(AuthErrors.LoginAttemptsExceeded(retryAfter), throttledUserId, LoginFailureReason.Throttled);
+        }
+
         var candidate = await session.Query<User>()
             .SingleOrDefaultAsync(existing => existing.Email == email.Value, cancellationToken);
 
@@ -106,6 +122,8 @@ public sealed class AuthService(
         {
             return LoginAttempt.Failed(AuthErrors.InvalidCredentials, user.Id, LoginFailureReason.InvalidPassword);
         }
+
+        loginAttemptThrottle.Reset(email.Value);
 
         var accessResult = await CheckUserCanSignInAsync(user, applicationId, cancellationToken);
 

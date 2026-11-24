@@ -51,4 +51,13 @@ public static class AuthErrors
     public static readonly Error RefreshTokenExpired = Error.Unauthorized(
         "Auth.RefreshTokenExpired",
         "The refresh token has expired.");
+
+    /// <summary>
+    /// Too many login attempts for one account (<see cref="LoginAttemptThrottle"/>). It uses the same code as the IP rate
+    /// limits, so satellites handle a single <c>429</c> error.
+    /// </summary>
+    public static Error LoginAttemptsExceeded(TimeSpan retryAfter) => Error.TooManyRequests(
+        AuthRateLimiting.ErrorCode,
+        "Too many login attempts for this account. Try again later.",
+        retryAfter);
 }
