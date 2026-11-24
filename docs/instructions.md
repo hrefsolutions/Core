@@ -112,9 +112,11 @@ The defaults come from the code or from `appsettings.json` and work on Railway. 
 | `Jwt__PreviousPublicKeys__N__KeyId` / `Jwt__PreviousPublicKeys__N__PublicKeyPem` | none | Retired public keys still published in the JWKS during a rotation (`N` = 0, 1, ...). See [JWT signing keys](#jwt-signing-keys). |
 | `Jwt__AccessTokenMinutes` | `15` | Access token lifetime, 1..60 (used from #24). |
 | `Jwt__RefreshTokenDays` | `30` | Refresh token lifetime, 1..365 (used from #23 / #24). |
+| `AuditLogs__Export__MaxRows` | `100000` | Maximum rows of one `GET /api/audit-logs/export`, 1..100000. A larger match returns `400 AuditLogs.ExportTooLarge`. |
+| `AuditLogs__Export__ChunkSize` | `1000` | Rows read per database query while streaming an export, 1..10000. |
 | `Serilog__MinimumLevel__Default` | `Information` | Log level of the console output (`Verbose`, `Debug`, `Information`, `Warning`, `Error`, `Fatal`). `Debug` also logs the recipient of every sent email. |
 
-The API does not start with an invalid `Smtp` or `Notifications:Worker` configuration (values out of range, unknown `SecureSocket`, only one of `Smtp__Username` / `Smtp__Password`, credentials with `None`). The deploy logs show which value failed.
+The API does not start with an invalid `Smtp`, `Notifications:Worker` or `AuditLogs:Export` configuration (values out of range, unknown `SecureSocket`, only one of `Smtp__Username` / `Smtp__Password`, credentials with `None`). The deploy logs show which value failed.
 
 ## First deploy checklist
 

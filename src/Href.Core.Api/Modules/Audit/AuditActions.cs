@@ -34,4 +34,5 @@ public static class AuditActions
     public const string TemplateCreated = "TEMPLATE_CREATED";
     public const string TemplateUpdated = "TEMPLATE_UPDATED";
     public const string TemplateDeleted = "TEMPLATE_DELETED";
+    public const string AuditLogExported = "AUDIT_LOG_EXPORTED";
 }

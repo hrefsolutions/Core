@@ -58,6 +58,7 @@ public sealed class AdminAuthorizationIntegrationTests(PostgresFixture postgres)
         { "DELETE", "/api/notifications/templates/some-template" },
         { "POST", "/api/notifications/templates/some-template/preview" },
         { "GET", "/api/audit-logs" },
+        { "GET", "/api/audit-logs/export?format=csv" },
     };
 
     [Theory]

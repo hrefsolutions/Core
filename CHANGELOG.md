@@ -15,6 +15,15 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
   - `oldValues` y `newValues` salen como objetos JSON, no como texto.
   - **Limitación conocida:** cada consulta hace un `count(*)` exacto y las páginas profundas usan `OFFSET`; con una tabla que solo crece, un conteo estimado o paginado por keyset queda como mejora a futuro.
   - **Migración `0010_audit_logs_query_indexes.sql`:** los índices por fecha y por `app_key` ahora incluyen `id`, y hay uno nuevo por `actor_id`. Así las consultas por fecha, aplicación y actor leen en el orden del índice, sin ordenar en memoria; tests con `EXPLAIN` sobre SQL equivalente lo verifican.
+- Exportación del registro de auditoría (#30): **`GET /api/audit-logs/export?format=csv|json`**, solo para admin, con los mismos filtros que la consulta y sin paginado.
+  - **Orden y corte:** del registro más viejo al más nuevo. Al empezar se fija un corte (el momento del request): lo que se registra después, incluida la auditoría de la propia exportación, no entra.
+  - **CSV:** UTF-8 con BOM para Excel, RFC 4180 con fila de encabezado, y `oldValues`/`newValues` como texto JSON. Una celda que empieza con `=`, `+`, `-`, `@`, tab o CR lleva un `'` adelante, para que la planilla no la ejecute como fórmula (CSV injection).
+  - **JSON:** un array con los mismos campos que la consulta; los snapshots salen como objetos JSON.
+  - **Descarga:** `Content-Disposition: attachment; filename="audit-logs-AAAAMMDD-HHmmss.csv|json"` (hora UTC del corte) y `Cache-Control: no-store`.
+  - **Streaming:** lee de a 1.000 filas con keyset sobre `(occurred_at_utc, id)` y escribe la respuesta a medida que avanza, sin juntar todo el resultado en memoria.
+  - **Límite:** más de 100.000 filas devuelve `400 AuditLogs.ExportTooLarge` y no audita nada; hay que acotar los filtros. Un `format` distinto de `csv` o `json` (exacto) devuelve `400 AuditLogs.InvalidFormat`.
+  - **Auditoría:** cada exportación registra `AUDIT_LOG_EXPORTED` con el formato, los filtros, el corte y la cantidad de filas, antes de empezar a mandar el archivo.
+  - **Variables nuevas (opcionales):** `AuditLogs__Export__MaxRows` (100.000 por defecto, 1..100.000) y `AuditLogs__Export__ChunkSize` (1.000 por defecto, 1..10.000).
 
 ## 0.5.0 - 2026-11-23
 

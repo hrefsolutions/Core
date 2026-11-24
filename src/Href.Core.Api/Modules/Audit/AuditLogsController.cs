@@ -11,7 +11,9 @@ namespace Href.Core.Api.Modules.Audit;
 [ApiController]
 [Route("api/audit-logs")]
 [Authorize(Policy = AdminAuthentication.PolicyName)]
-public sealed class AuditLogsController(AuditLogQueryService queryService) : ControllerBase
+public sealed class AuditLogsController(
+    AuditLogQueryService queryService,
+    AuditLogExportService exportService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List(
@@ -36,5 +38,33 @@ public sealed class AuditLogsController(AuditLogQueryService queryService) : Con
         return result.IsFailure
             ? result.ToProblem(this)
             : Ok(result.Value);
+    }
+
+    /// <summary>
+    /// Downloads every row matching the filters of <see cref="List"/> (no paging), oldest first, as <c>format=csv</c> or
+    /// <c>format=json</c>.
+    /// </summary>
+    [HttpGet("export")]
+    public async Task<IActionResult> Export(
+        [FromQuery] string? format,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] string? appKey,
+        [FromQuery] string? actorType,
+        [FromQuery] string? actorId,
+        [FromQuery] string? action,
+        [FromQuery] string? entityType,
+        [FromQuery] string? entityId,
+        [FromQuery] string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+
+        var filter = new AuditLogFilterRequest(from, to, appKey, actorType, actorId, action, entityType, entityId, correlationId);
+        var result = await exportService.PrepareAsync(new ExportAuditLogsQuery(format, filter), cancellationToken);
+
+        return result.IsFailure
+            ? result.ToProblem(this)
+            : new AuditLogExportResult(result.Value, exportService);
     }
 }
