@@ -67,6 +67,47 @@ public sealed class GlobalExceptionHandlerTests
         Assert.DoesNotContain(entry.State, pair => pair.Value is PathString || Equals(pair.Value, "GET"));
     }
 
+    [Fact]
+    public async Task TryHandleAsync_WithABodyOverTheSizeLimit_Returns413RequestTooLargeAndLogsAWarning()
+    {
+        var problemDetailsService = new CapturingProblemDetailsService();
+        var logger = new CapturingLogger();
+        var handler = new GlobalExceptionHandler(problemDetailsService, new StubHostEnvironment(Environments.Production), logger);
+        var context = new DefaultHttpContext();
+
+        var handled = await handler.TryHandleAsync(
+            context,
+            new BadHttpRequestException("Request body too large.", StatusCodes.Status413PayloadTooLarge),
+            CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, context.Response.StatusCode);
+        Assert.NotNull(problemDetailsService.CapturedContext);
+        var problem = problemDetailsService.CapturedContext.ProblemDetails;
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, problem.Status);
+        Assert.Equal(GlobalExceptionHandler.RequestTooLargeErrorCode, problem.Extensions["errorCode"]);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_WithAnotherUnreadableRequest_KeepsItsClientErrorStatus()
+    {
+        var problemDetailsService = new CapturingProblemDetailsService();
+        var handler = new GlobalExceptionHandler(
+            problemDetailsService,
+            new StubHostEnvironment(Environments.Production),
+            NullLogger<GlobalExceptionHandler>.Instance);
+        var context = new DefaultHttpContext();
+
+        await handler.TryHandleAsync(context, new BadHttpRequestException("Unexpected end of request content."), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.NotNull(problemDetailsService.CapturedContext);
+        Assert.Equal(GlobalExceptionHandler.InvalidRequestErrorCode, problemDetailsService.CapturedContext.ProblemDetails.Extensions["errorCode"]);
+    }
+
     private sealed class CapturingLogger : ILogger<GlobalExceptionHandler>
     {
         public List<(LogLevel Level, string Message, Exception? Exception, IReadOnlyList<KeyValuePair<string, object?>> State)> Entries { get; } = [];

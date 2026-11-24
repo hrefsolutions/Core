@@ -32,6 +32,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
   - **Auditoría:** cada exportación registra `AUDIT_LOG_EXPORTED` con el formato, los filtros, el corte y la cantidad de filas, antes de empezar a mandar el archivo.
   - **Variables nuevas (opcionales):** `AuditLogs__Export__MaxRows` (100.000 por defecto, 1..100.000) y `AuditLogs__Export__ChunkSize` (1.000 por defecto, 1..10.000).
 
+### Corregido
+
+- Un body más grande que el límite del endpoint (64 KB en `/api/auth/*`; 8 MB en `POST /api/notifications/email` y en la administración de templates) devolvía `500` y quedaba registrado como error, porque `GlobalExceptionHandler` convertía en `500` la excepción de Kestrel. Ahora devuelve `413` con `errorCode` `Request.TooLarge`, y cualquier otro request ilegible su `4xx` con `Request.Invalid`; los dos se registran como warning. Lo encontró la review del PR de #31, que es el que publica ese `413` en el contrato.
+
 ## 0.5.0 - 2026-11-23
 
 ### Agregado

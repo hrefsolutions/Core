@@ -2,9 +2,11 @@ using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Href.Core.Api.Common.OpenApi;
+using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Auth;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
@@ -91,6 +93,11 @@ public sealed partial class OpenApiIntegrationTests(PostgresFixture postgres)
                 Assert.True(responses.TryGetProperty("403", out _), $"{name} does not document 403.");
             }
 
+            if (endpoint.Metadata.GetMetadata<IRequestSizeLimitMetadata>()?.MaxRequestBodySize is not null)
+            {
+                Assert.True(responses.TryGetProperty("413", out _), $"{name} limits the body size but does not document 413.");
+            }
+
             if (endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>() is not null)
             {
                 Assert.True(responses.TryGetProperty("429", out _), $"{name} is rate limited but does not document 429.");
@@ -114,6 +121,13 @@ public sealed partial class OpenApiIntegrationTests(PostgresFixture postgres)
         Assert.Contains(AppKeyAuthentication.ApplicationSuspendedError.Code, login.GetProperty("403").GetProperty("description").GetString(), StringComparison.Ordinal);
         Assert.Contains(AuthRateLimiting.ErrorCode, login.GetProperty("429").GetProperty("description").GetString(), StringComparison.Ordinal);
         Assert.Contains(AuthController.RequestSizeLimitBytes.ToString(System.Globalization.CultureInfo.InvariantCulture), login.GetProperty("413").GetProperty("description").GetString(), StringComparison.Ordinal);
+        Assert.Contains(GlobalExceptionHandler.RequestTooLargeErrorCode, login.GetProperty("413").GetProperty("description").GetString(), StringComparison.Ordinal);
+        var queueEmail413 = paths.GetProperty("/api/notifications/email").GetProperty("post").GetProperty("responses").GetProperty("413");
+        Assert.Single(
+            System.Text.RegularExpressions.Regex.Matches(
+                queueEmail413.GetProperty("description").GetString()!,
+                System.Text.RegularExpressions.Regex.Escape(GlobalExceptionHandler.RequestTooLargeErrorCode)));
+        Assert.True(queueEmail413.GetProperty("content").TryGetProperty("application/problem+json", out _));
         Assert.Single(
             System.Text.RegularExpressions.Regex.Matches(
                 login.GetProperty("403").GetProperty("description").GetString()!,

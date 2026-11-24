@@ -27,13 +27,13 @@ public sealed class NotificationsController(NotificationService notificationServ
     /// <response code="202">`{ id, status }` of the queued notification; `Location` points to `GET /api/notifications/{id}`.</response>
     /// <response code="400">`Notifications.InvalidContent`, `Notifications.InvalidRecipient`, `Notifications.InvalidRecipientName`, `Notifications.InvalidSubject`, `Notifications.InvalidNotifyOnFailureTo`, `Notifications.ContentTooLarge`, `Templates.MissingVariables`, `Templates.DuplicateVariables` or `Templates.RenderedContentTooLarge`; a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
     /// <response code="404">`Templates.NotFound` (the key is exact and case-sensitive).</response>
-    /// <response code="413">The request body is larger than 8 MB.</response>
+    /// <response code="413">The request body is larger than 8 MB: `Request.TooLarge`.</response>
     [HttpPost("email")]
     [RequestSizeLimit(MaxRequestBodyBytes)]
     [ProducesResponseType<QueuedNotificationResponse>(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
-    [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")]
     public async Task<IActionResult> QueueEmail(
         [FromBody] QueueEmailRequest request,
         CancellationToken cancellationToken)

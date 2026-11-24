@@ -1,3 +1,4 @@
+using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Auth;
 using Microsoft.AspNetCore.Authorization;
@@ -156,9 +157,13 @@ public static class OpenApiSetup
 
         if (metadata.OfType<IRequestSizeLimitMetadata>().LastOrDefault()?.MaxRequestBodySize is { } maxBodyBytes)
         {
-            operation.Responses.TryAdd(
-                StatusCodes.Status413PayloadTooLarge.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                new OpenApiResponse { Description = $"The request body is larger than {maxBodyBytes} bytes." });
+            await AddProblemResponseAsync(
+                operation,
+                context,
+                StatusCodes.Status413PayloadTooLarge,
+                $"The request body is larger than {maxBodyBytes} bytes: `{GlobalExceptionHandler.RequestTooLargeErrorCode}`.",
+                GlobalExceptionHandler.RequestTooLargeErrorCode,
+                cancellationToken);
         }
 
         if (metadata.OfType<EnableRateLimitingAttribute>().Any())
