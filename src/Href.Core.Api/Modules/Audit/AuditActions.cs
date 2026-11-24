@@ -25,6 +25,10 @@ public static class AuditActions
     public const string LoginSucceeded = "LOGIN_SUCCEEDED";
     public const string RefreshTokenReuseDetected = "REFRESH_TOKEN_REUSE_DETECTED";
     public const string Logout = "LOGOUT";
+    public const string UserRegistered = "USER_REGISTERED";
+    public const string EmailVerified = "EMAIL_VERIFIED";
+    public const string PasswordResetRequested = "PASSWORD_RESET_REQUESTED";
+    public const string PasswordReset = "PASSWORD_RESET";
     public const string SessionsRevoked = "SESSIONS_REVOKED";
     public const string NotificationQueued = "NOTIFICATION_QUEUED";
     public const string TemplateCreated = "TEMPLATE_CREATED";

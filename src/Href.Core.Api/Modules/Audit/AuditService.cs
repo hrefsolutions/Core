@@ -25,7 +25,7 @@ public sealed class AuditService(
         var (actorType, actorId) = ResolveActor(entry, httpContext);
         var appKey = entry.AppKeyOverride ?? httpContext?.User.GetAppKey();
         var correlationId = ResolveCorrelationId(httpContext);
-        var ipAddress = httpContext?.Connection.RemoteIpAddress?.ToString();
+        var ipAddress = httpContext is null ? null : EndUserIp.Resolve(httpContext);
         var userAgent = httpContext?.Request.Headers.UserAgent.ToString();
 
         var auditLog = AuditLog.Create(

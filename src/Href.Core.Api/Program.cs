@@ -1,3 +1,4 @@
+using Href.Core.Api.Common.Logging;
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
@@ -14,7 +15,7 @@ using Microsoft.AspNetCore.Identity;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
+    .WriteToConsole(ConsoleLogging.IsDevelopmentFromEnvironmentVariables())
     .CreateBootstrapLogger();
 
 try
@@ -25,7 +26,8 @@ try
         (services, logger) => logger
             .ReadFrom.Configuration(builder.Configuration)
             .ReadFrom.Services(services)
-            .Enrich.FromLogContext(),
+            .Enrich.FromLogContext()
+            .WriteToConsole(builder.Environment.IsDevelopment()),
         preserveStaticLogger: true);
 
     builder.Services.AddControllers();
@@ -59,6 +61,7 @@ try
     builder.Services.AddScoped<ApplicationAccessService>();
     builder.Services.AddScoped<AuthService>();
     builder.Services.AddScoped<UserSessionsService>();
+    builder.Services.AddScoped<AccountService>();
     builder.Services.AddSingleton<DummyPasswordHash>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
@@ -82,6 +85,7 @@ try
             .RequireAuthenticatedUser()
             .RequireClaim(AccessTokenFactory.PermissionsClaimType, CoreApplication.AdminPermissionKey));
     builder.Services.AddAdminBootstrap(builder.Configuration);
+    builder.Services.AddAuthRateLimiting();
 
     var app = builder.Build();
 
@@ -95,6 +99,7 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseMiddleware<AppKeyLogContextMiddleware>();
+    app.UseRateLimiter();
     app.MapControllers();
 
     app.Run();

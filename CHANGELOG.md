@@ -4,6 +4,57 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.5.0 - 2026-11-23
+
+### Agregado
+
+- Registro propio y verificación de email (#26). Los llama el backend satélite con sus credenciales M2M:
+  - **`POST /api/auth/register`:**
+    - solo para aplicaciones con `AllowSelfRegistration`; si no, `403 Auth.SelfRegistrationDisabled`, y `core` nunca lo tiene;
+    - crea el usuario sin verificar, con acceso a la aplicación con su rol por defecto (o sin roles si no tiene uno);
+    - encola la plantilla `verify-email` con un link válido por 24 h y audita `USER_REGISTERED` y `ACCESS_GRANTED`, todo en una transacción;
+    - un email repetido, en cualquier aplicación y sin importar mayúsculas, devuelve `409 Auth.EmailAlreadyRegistered`, también con requests simultáneos.
+  - **`POST /api/auth/verify-email`:** consume el token, verifica el email y audita `EMAIL_VERIFIED`. Si el usuario está activo, encola `welcome-user`; uno bloqueado queda verificado pero no recibe la bienvenida.
+    - Un token usado, vencido, revocado, de otra aplicación o de otro propósito devuelve `400 Auth.InvalidOneTimeToken`. Es un código nuevo, distinto del `401 Auth.InvalidToken` de admin.
+    - Dos usos simultáneos del mismo token dan un `204` y un `400`.
+  - **`POST /api/auth/resend-verification`:** responde siempre `202` y solo envía si el usuario existe, está activo, no está verificado y tiene acceso a la aplicación.
+    - Revoca los tokens de verificación anteriores del usuario, de cualquier aplicación.
+    - Si el usuario recibió un token hace menos de 60 segundos, no manda nada, para que nadie pueda llenarle la casilla de mails.
+  - **Orden de los locks:** todos los flujos de cuenta toman primero la fila del usuario y después la del token. Así `verify-email` y `resend-verification` simultáneos no se trancan entre sí; un test lo verifica de forma determinista.
+  - **URLs de las páginas** (`verifyEmailUrl`): se validan antes de ponerlas en un email firmado por el Core. Tienen que ser `https` (`http` solo en localhost), sin usuario ni contraseña, sin fragmento, de hasta 2048 caracteres (también una vez escapada) y sin un parámetro `token` propio, separado con `&` o con `;`. Si no, devuelven `400 Auth.InvalidCallbackUrl`.
+  - **Entidad `UserToken`** y migración `0009_create_user_tokens.sql`: tokens de un solo uso atados al usuario y a la aplicación; se guarda solo su SHA-256. Queda lista para el reset de contraseña de #27.
+  - **Limitación conocida:** el cuerpo del email encolado, con el link y el token, queda en texto plano en `notifications` hasta que se limpie. Borrar esos cuerpos después del envío queda como mejora a futuro.
+- Recuperación de contraseña (#27). La llama el backend satélite con sus credenciales M2M:
+  - **`POST /api/auth/forgot-password`** (`{ email, resetPasswordUrl }`): responde siempre `202`, salvo `400 Auth.InvalidCallbackUrl` si la URL de la página es inválida (mismas reglas que `verifyEmailUrl`).
+    - Solo envía si el usuario existe, está activo y tiene acceso a la aplicación. Si recibió un token de reset hace menos de 60 segundos, no manda nada: así nadie le llena la casilla ni le invalida el link pidiendo uno nuevo cada vez.
+    - Revoca los tokens de reset anteriores del usuario, de cualquier aplicación, emite uno nuevo válido por 30 minutos, encola la plantilla `reset-password` y audita `PASSWORD_RESET_REQUESTED`.
+  - **`POST /api/auth/reset-password`** (`{ token, newPassword }`): responde `204`.
+    - Guarda la contraseña nueva, regenera el security stamp, consume el token y revoca todas las sesiones del usuario en todas las aplicaciones (`PasswordReset`). Audita `PASSWORD_RESET` y, si había sesiones activas, `SESSIONS_REVOKED`.
+    - Una contraseña débil devuelve `400 Users.WeakPassword` sin consumir el token. Un token usado, vencido, revocado, de otra aplicación o de verificación, o de un usuario bloqueado o sin acceso a la aplicación, devuelve `400 Auth.InvalidOneTimeToken` (el issue pedía `Auth.InvalidToken`, que es el `401` de admin).
+    - No verifica el email: un usuario sin verificar igual necesita `verify-email` para hacer login.
+    - Toma los locks en el mismo orden que el login: el advisory lock de refresh tokens, la fila del usuario y la del token. Dos usos simultáneos del mismo token dan un `204` y un `400`.
+  - **Cambio de email por admin** (`PUT /api/users/{id}`): revoca los tokens de un solo uso abiertos del usuario (verificación y reset), así un link enviado a la dirección anterior deja de servir.
+  - **Limitación conocida:** `forgot-password` y `resend-verification` siempre responden `202`, pero con una cuenta existente tardan más, así que el tiempo de respuesta puede revelar si un email está registrado.
+- Rate limiting en los endpoints de auth y auditoría de logins fallidos (#28):
+  - **Header `X-End-User-Ip`** (opcional): el backend satélite manda la IP de su usuario final. Se usa solo en requests autenticados con credenciales M2M (no en los de admin con Bearer) y si es una IP válida; si no, se usa la IP de la conexión. En producción el satélite **tiene** que mandarlo: sin él, todos sus usuarios comparten un mismo cupo.
+  - **Límites** (en memoria, ventana fija de 1 minuto, por `AppKey` + IP del usuario final; una IPv6 cuenta como su red /64):
+    - 10 requests entre `login`, `register`, `forgot-password` y `resend-verification`;
+    - 60 requests de `refresh`.
+  - **Al pasarse:** `429` como `ProblemDetails` con `errorCode` `RateLimit.Exceeded` y el header `Retry-After`.
+  - **`LOGIN_FAILED`:** cada login fallido queda auditado en su propia transacción, con el email normalizado (vacío si no es un email válido: nunca se guarda lo que se tipeó), el motivo (`UnknownEmail`, `InvalidPassword`, `EmailNotVerified`, `UserLocked` o `NoAccessToApplication`) y la IP del usuario final. Nunca guarda la contraseña.
+  - **Auditoría:** `audit_logs.ip_address` ahora guarda la IP del usuario final cuando el satélite la manda.
+
+### Seguridad
+
+- Logs sin entradas falsificadas (alertas `cs/log-forging` de CodeQL):
+  - `GlobalExceptionHandler` ya no escribe el método ni el path del request en el log de la excepción. Los tiene la línea de fin del request, con el mismo `CorrelationId`.
+  - Fuera de `Development`, la consola escribe una línea JSON por evento (`time`, `level`, `message`, `exception` y cada propiedad como atributo), el formato de logs estructurados de Railway. Los saltos de línea quedan escapados, así que un path con `%0A` ya no puede agregar una línea de log falsa, y un stack trace es una sola entrada. En `Development` sigue el formato de texto.
+  - El sink de consola pasó de `appsettings.json` al código (`Common/Logging/ConsoleLogging`).
+
+### Documentación
+
+- `SECURITY.md`: política de seguridad. Indica que solo el último release recibe fixes y que una vulnerabilidad se reporta en privado con el reporte privado de GitHub (pestaña Security → Report a vulnerability), nunca en un issue público. También fija los plazos de respuesta (5 días hábiles para el acuse de recibo y 15 para la evaluación) y el alcance.
+
 ## 0.4.0 - 2026-11-23
 
 ### Agregado

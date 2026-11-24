@@ -4,6 +4,18 @@ public sealed record LoginRequest(string? Email, string? Password);
 
 public sealed record RefreshRequest(string? RefreshToken);
 
+public sealed record RegisterRequest(string? Email, string? Password, string? FullName, string? VerifyEmailUrl);
+
+public sealed record RegisterResponse(Guid UserId);
+
+public sealed record VerifyEmailRequest(string? Token);
+
+public sealed record ResendVerificationRequest(string? Email, string? VerifyEmailUrl);
+
+public sealed record ForgotPasswordRequest(string? Email, string? ResetPasswordUrl);
+
+public sealed record ResetPasswordRequest(string? Token, string? NewPassword);
+
 public sealed record TokenResponse(
     string AccessToken,
     string TokenType,
@@ -33,6 +45,26 @@ public sealed record IssuedAccessToken(string Token, DateTime ExpiresAtUtc, int 
 /// Audit snapshot of a successful login; never contains tokens or hashes.
 /// </summary>
 public sealed record LoginAuditSnapshot(Guid UserId, string Email, Guid RefreshTokenFamilyId);
+
+/// <summary>
+/// Audit snapshot of a failed login (<c>LOGIN_FAILED</c>): the normalized email (<c>null</c> when the input is not a valid
+/// address: raw input is never stored, it may be a password typed in the wrong field) and the
+/// <see cref="LoginFailureReason"/> name; never the password.
+/// </summary>
+public sealed record LoginFailedAuditSnapshot(string? Email, string Reason);
+
+/// <summary>
+/// Why a login failed, as recorded in <c>LOGIN_FAILED</c>. The response does not say it: the first two reasons both
+/// return <c>401 Auth.InvalidCredentials</c>.
+/// </summary>
+public enum LoginFailureReason
+{
+    UnknownEmail,
+    InvalidPassword,
+    EmailNotVerified,
+    UserLocked,
+    NoAccessToApplication,
+}
 
 /// <summary>
 /// Audit snapshot of a refresh token reuse; never contains tokens or hashes.
