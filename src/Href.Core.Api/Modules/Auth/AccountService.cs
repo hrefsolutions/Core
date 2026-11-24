@@ -13,8 +13,8 @@ using ISession = NHibernate.ISession;
 namespace Href.Core.Api.Modules.Auth;
 
 /// <summary>
-/// Self-service account flows called by satellite backends with their M2M credentials: registration, email verification
-/// and resending the verification email. Emails are queued through <see cref="NotificationService"/> inside the same
+/// Self-service account flows called by satellite backends with their M2M credentials: registration, email verification,
+/// resending the verification email, and password recovery. Emails are queued through <see cref="NotificationService"/> inside the same
 /// transaction as the account change, so a failure leaves neither the change nor the email.
 /// </summary>
 public sealed class AccountService(
@@ -26,6 +26,7 @@ public sealed class AccountService(
 {
     public const string VerifyEmailTemplateKey = "verify-email";
     public const string WelcomeUserTemplateKey = "welcome-user";
+    public const string ResetPasswordTemplateKey = "reset-password";
 
     public static readonly TimeSpan ResendCooldown = TimeSpan.FromSeconds(60);
 
@@ -262,6 +263,193 @@ public sealed class AccountService(
         if (queued.IsFailure)
         {
             return queued.Error;
+        }
+
+        await session.FlushAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Emails a 30 min password reset link and revokes the user's previous reset tokens of every application. The caller
+    /// always answers 202: nothing is sent when the email is unknown, the user is locked or has no access to the calling
+    /// application, or got a reset token less than <see cref="ResendCooldown"/> ago (so the inbox cannot be flooded and a
+    /// link cannot be killed by a stream of new requests). Only an invalid page URL is reported, because it does not depend
+    /// on the user. Lock order: the user row, then the token rows.
+    /// </summary>
+    public async Task<Result> ForgotPasswordAsync(
+        Guid applicationId,
+        string appKey,
+        ForgotPasswordRequest request,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!CallbackUrl.TryParse(request.ResetPasswordUrl, out var resetPasswordUrl))
+        {
+            return AuthErrors.InvalidCallbackUrl;
+        }
+
+        var email = User.NormalizeEmail(request.Email);
+
+        if (email.IsFailure)
+        {
+            return Result.Success();
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        var userId = await session.Query<User>()
+            .Where(candidate => candidate.Email == email.Value)
+            .Select(candidate => (Guid?)candidate.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (userId is null)
+        {
+            return Result.Success();
+        }
+
+        var user = await session.GetAsync<User>(userId.Value, NHibernate.LockMode.Upgrade, cancellationToken);
+        var hasAccess = await session.Query<UserApplicationAccess>()
+            .AnyAsync(access => access.UserId == user.Id && access.ApplicationId == applicationId, cancellationToken);
+
+        if (user.Status != UserStatus.Active || !hasAccess)
+        {
+            return Result.Success();
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var cooldownStart = now - ResendCooldown;
+        var recentlySent = await session.Query<UserToken>()
+            .AnyAsync(token => token.UserId == user.Id
+                && token.Purpose == UserTokenPurpose.PasswordReset
+                && token.ConsumedAtUtc == null
+                && token.RevokedAtUtc == null
+                && token.CreatedAtUtc > cooldownStart, cancellationToken);
+
+        if (recentlySent)
+        {
+            return Result.Success();
+        }
+
+        await UserTokenWrites.RevokeOpenAsync(session, user.Id, UserTokenPurpose.PasswordReset, exceptTokenId: null, now, cancellationToken);
+
+        var issued = UserToken.Issue(user.Id, applicationId, UserTokenPurpose.PasswordReset, now, UserToken.PasswordResetLifetime);
+        await session.SaveAsync(issued.Token, cancellationToken);
+        await auditService.RecordUserChangeAsync(AuditActions.PasswordResetRequested, null, UserAuditSnapshot.From(user), cancellationToken);
+
+        var application = await session.GetAsync<Application>(applicationId, cancellationToken);
+        var queued = await notificationService.QueueTemplateAsync(
+            appKey,
+            new EmailRecipientRequest(user.Email, user.FullName),
+            ResetPasswordTemplateKey,
+            new Dictionary<string, string>
+            {
+                ["UserName"] = user.FullName,
+                ["AppName"] = application.Name,
+                ["ResetUrl"] = CallbackUrl.WithToken(resetPasswordUrl, issued.PlainToken),
+                ["ExpiresInMinutes"] = ((int)UserToken.PasswordResetLifetime.TotalMinutes).ToString(CultureInfo.InvariantCulture),
+            },
+            notifyOnFailureTo: null,
+            correlationId,
+            cancellationToken);
+
+        if (queued.IsFailure)
+        {
+            return queued.Error;
+        }
+
+        await session.FlushAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Sets a new password with a reset token of the calling application, for an active user that still has access to it:
+    /// regenerates the security stamp, consumes the
+    /// token, revokes the user's other reset tokens and every session of every application (<c>PasswordReset</c>), and
+    /// records <c>PASSWORD_RESET</c> (plus <c>SESSIONS_REVOKED</c> when a session was revoked). A weak password is rejected
+    /// before the token is touched, so the link can be used again. Lock order, the same as login and refresh: the per-user
+    /// refresh token advisory lock, then the user row, then the token row, both <c>FOR UPDATE</c> and read after the lock.
+    /// </summary>
+    public async Task<Result> ResetPasswordAsync(
+        Guid applicationId,
+        ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var tokenHash = UserToken.HashToken(request.Token);
+
+        if (tokenHash is null)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        var policy = PasswordPolicy.Validate(request.NewPassword);
+
+        if (policy.IsFailure)
+        {
+            return policy.Error;
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        var target = await session.Query<UserToken>()
+            .Where(candidate => candidate.TokenHash == tokenHash
+                && candidate.ApplicationId == applicationId
+                && candidate.Purpose == UserTokenPurpose.PasswordReset)
+            .Select(candidate => new { candidate.Id, candidate.UserId })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (target is null)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        await RefreshTokenWrites.LockUserAsync(session, target.UserId, cancellationToken);
+        var user = await session.GetAsync<User>(target.UserId, NHibernate.LockMode.Upgrade, cancellationToken);
+        var token = await session.GetAsync<UserToken>(target.Id, NHibernate.LockMode.Upgrade, cancellationToken);
+
+        var hasAccess = await session.Query<UserApplicationAccess>()
+            .AnyAsync(access => access.UserId == user.Id && access.ApplicationId == applicationId, cancellationToken);
+
+        if (user.Status != UserStatus.Active || !hasAccess)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var consumed = token.Consume(now);
+
+        if (consumed.IsFailure)
+        {
+            return consumed.Error;
+        }
+
+        var before = UserAuditSnapshot.From(user);
+        var changed = user.SetPassword(request.NewPassword, passwordHasher);
+
+        if (changed.IsFailure)
+        {
+            return changed.Error;
+        }
+
+        await UserTokenWrites.RevokeOpenAsync(session, user.Id, UserTokenPurpose.PasswordReset, token.Id, now, cancellationToken);
+        var revokedSessions = await RefreshTokenWrites.RevokeActiveSessionsAsync(
+            session,
+            user.Id,
+            applicationId: null,
+            now,
+            RefreshTokenRevocationReason.PasswordReset,
+            cancellationToken);
+
+        await auditService.RecordUserChangeAsync(AuditActions.PasswordReset, before, UserAuditSnapshot.From(user), cancellationToken);
+
+        if (revokedSessions > 0)
+        {
+            await auditService.RecordSessionsRevokedAsync(user.Id, null, RefreshTokenRevocationReason.PasswordReset, revokedSessions, cancellationToken);
         }
 
         await session.FlushAsync(cancellationToken);
