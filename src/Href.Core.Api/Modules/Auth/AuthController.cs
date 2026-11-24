@@ -3,6 +3,7 @@ using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Href.Core.Api.Modules.Auth;
 
@@ -18,6 +19,7 @@ public sealed class AuthController(AuthService authService, AccountService accou
     /// Registers a user for the calling application (only with <c>AllowSelfRegistration</c>) and emails a verification link.
     /// </summary>
     [HttpPost("register")]
+    [EnableRateLimiting(AuthRateLimiting.StrictPolicy)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetApplication(out var applicationId, out var appKey))
@@ -52,6 +54,7 @@ public sealed class AuthController(AuthService authService, AccountService accou
     /// Sends a new verification email when the account can receive one. Always 202, except for an invalid page URL.
     /// </summary>
     [HttpPost("resend-verification")]
+    [EnableRateLimiting(AuthRateLimiting.StrictPolicy)]
     public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetApplication(out var applicationId, out var appKey))
@@ -68,6 +71,7 @@ public sealed class AuthController(AuthService authService, AccountService accou
     /// Emails a password reset link when the account can receive one. Always 202, except for an invalid page URL.
     /// </summary>
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(AuthRateLimiting.StrictPolicy)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetApplication(out var applicationId, out var appKey))
@@ -100,6 +104,7 @@ public sealed class AuthController(AuthService authService, AccountService accou
     /// Logs a user in for the calling application (taken from the M2M credentials) and returns an access token and a refresh token.
     /// </summary>
     [HttpPost("login")]
+    [EnableRateLimiting(AuthRateLimiting.StrictPolicy)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetApplication(out var applicationId, out var appKey))
@@ -115,6 +120,7 @@ public sealed class AuthController(AuthService authService, AccountService accou
     /// Rotates a refresh token of the calling application and returns new tokens.
     /// </summary>
     [HttpPost("refresh")]
+    [EnableRateLimiting(AuthRateLimiting.RefreshPolicy)]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetApplication(out var applicationId, out var appKey))
