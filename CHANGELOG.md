@@ -4,6 +4,8 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.6.1 - 2026-11-24
+
 Cierra los hallazgos de la auditoría E2E de v0.6.0 (#115, #116, #117, #118, #119).
 
 ### Agregado
