@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Href.Core.Tests.Common;
@@ -42,6 +43,44 @@ public sealed class GlobalExceptionHandlerTests
         Assert.True(handled);
         Assert.NotNull(problemDetailsService.CapturedContext);
         Assert.Equal("Detailed failure", problemDetailsService.CapturedContext.ProblemDetails.Detail);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_DoesNotLogTheRequestMethodOrPath()
+    {
+        var logger = new CapturingLogger();
+        var handler = new GlobalExceptionHandler(
+            new CapturingProblemDetailsService(),
+            new StubHostEnvironment(Environments.Production),
+            logger);
+        var context = new DefaultHttpContext();
+        context.Request.Method = "GET";
+        context.Request.Path = "/api/forged\n[12:00:00 INF] Forged entry";
+
+        await handler.TryHandleAsync(context, new InvalidOperationException("Failure"), CancellationToken.None);
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.NotNull(entry.Exception);
+        Assert.DoesNotContain("forged", entry.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("GET", entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(entry.State, pair => pair.Value is PathString || Equals(pair.Value, "GET"));
+    }
+
+    private sealed class CapturingLogger : ILogger<GlobalExceptionHandler>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception, IReadOnlyList<KeyValuePair<string, object?>> State)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var pairs = state as IReadOnlyList<KeyValuePair<string, object?>> ?? Array.Empty<KeyValuePair<string, object?>>();
+            Entries.Add((logLevel, formatter(state, exception), exception, pairs));
+        }
     }
 
     private sealed class CapturingProblemDetailsService : IProblemDetailsService
