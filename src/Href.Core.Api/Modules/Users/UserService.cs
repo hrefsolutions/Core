@@ -164,7 +164,8 @@ public sealed class UserService(
     }
 
     /// <summary>
-    /// Replaces the full name and the email. A different email clears the verification and is audited as
+    /// Replaces the full name and the email. A different email clears the verification, revokes the user's open one-time
+    /// tokens (email verification and password reset links sent to the old address) and is audited as
     /// <c>USER_EMAIL_CHANGED</c>; a name-only change as <c>USER_UPDATED</c>; no change records nothing.
     /// </summary>
     public async Task<Result<UserResponse>> UpdateAsync(Guid id, UpdateUserRequest request, CancellationToken cancellationToken)
@@ -216,6 +217,12 @@ public sealed class UserService(
         try
         {
             await auditService.RecordUserChangeAsync(action, before, after, cancellationToken);
+
+            if (emailChanged)
+            {
+                await UserTokenWrites.RevokeOpenAsync(session, user.Id, purpose: null, exceptTokenId: null, timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            }
+
             await session.FlushAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }

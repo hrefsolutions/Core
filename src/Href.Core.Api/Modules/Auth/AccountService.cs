@@ -273,8 +273,9 @@ public sealed class AccountService(
     /// <summary>
     /// Emails a 30 min password reset link and revokes the user's previous reset tokens of every application. The caller
     /// always answers 202: nothing is sent when the email is unknown, the user is locked or has no access to the calling
-    /// application. Only an invalid page URL is reported, because it does not depend on the user. Lock order: the user
-    /// row, then the token rows.
+    /// application, or got a reset token less than <see cref="ResendCooldown"/> ago (so the inbox cannot be flooded and a
+    /// link cannot be killed by a stream of new requests). Only an invalid page URL is reported, because it does not depend
+    /// on the user. Lock order: the user row, then the token rows.
     /// </summary>
     public async Task<Result> ForgotPasswordAsync(
         Guid applicationId,
@@ -319,7 +320,20 @@ public sealed class AccountService(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        await RevokeOpenTokensAsync(user.Id, UserTokenPurpose.PasswordReset, exceptTokenId: null, now, cancellationToken);
+        var cooldownStart = now - ResendCooldown;
+        var recentlySent = await session.Query<UserToken>()
+            .AnyAsync(token => token.UserId == user.Id
+                && token.Purpose == UserTokenPurpose.PasswordReset
+                && token.ConsumedAtUtc == null
+                && token.RevokedAtUtc == null
+                && token.CreatedAtUtc > cooldownStart, cancellationToken);
+
+        if (recentlySent)
+        {
+            return Result.Success();
+        }
+
+        await UserTokenWrites.RevokeOpenAsync(session, user.Id, UserTokenPurpose.PasswordReset, exceptTokenId: null, now, cancellationToken);
 
         var issued = UserToken.Issue(user.Id, applicationId, UserTokenPurpose.PasswordReset, now, UserToken.PasswordResetLifetime);
         await session.SaveAsync(issued.Token, cancellationToken);
@@ -352,7 +366,8 @@ public sealed class AccountService(
     }
 
     /// <summary>
-    /// Sets a new password with a reset token of the calling application: regenerates the security stamp, consumes the
+    /// Sets a new password with a reset token of the calling application, for an active user that still has access to it:
+    /// regenerates the security stamp, consumes the
     /// token, revokes the user's other reset tokens and every session of every application (<c>PasswordReset</c>), and
     /// records <c>PASSWORD_RESET</c> (plus <c>SESSIONS_REVOKED</c> when a session was revoked). A weak password is rejected
     /// before the token is touched, so the link can be used again. Lock order, the same as login and refresh: the per-user
@@ -397,7 +412,10 @@ public sealed class AccountService(
         var user = await session.GetAsync<User>(target.UserId, NHibernate.LockMode.Upgrade, cancellationToken);
         var token = await session.GetAsync<UserToken>(target.Id, NHibernate.LockMode.Upgrade, cancellationToken);
 
-        if (user.Status != UserStatus.Active)
+        var hasAccess = await session.Query<UserApplicationAccess>()
+            .AnyAsync(access => access.UserId == user.Id && access.ApplicationId == applicationId, cancellationToken);
+
+        if (user.Status != UserStatus.Active || !hasAccess)
         {
             return AuthErrors.InvalidOneTimeToken;
         }
@@ -418,7 +436,7 @@ public sealed class AccountService(
             return changed.Error;
         }
 
-        await RevokeOpenTokensAsync(user.Id, UserTokenPurpose.PasswordReset, token.Id, now, cancellationToken);
+        await UserTokenWrites.RevokeOpenAsync(session, user.Id, UserTokenPurpose.PasswordReset, token.Id, now, cancellationToken);
         var revokedSessions = await RefreshTokenWrites.RevokeActiveSessionsAsync(
             session,
             user.Id,
@@ -437,26 +455,6 @@ public sealed class AccountService(
         await session.FlushAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result.Success();
-    }
-
-    private async Task RevokeOpenTokensAsync(
-        Guid userId,
-        UserTokenPurpose purpose,
-        Guid? exceptTokenId,
-        DateTime nowUtc,
-        CancellationToken cancellationToken)
-    {
-        var open = await session.Query<UserToken>()
-            .Where(token => token.UserId == userId
-                && token.Purpose == purpose
-                && token.ConsumedAtUtc == null
-                && token.RevokedAtUtc == null)
-            .ToListAsync(cancellationToken);
-
-        foreach (var token in open.Where(token => token.Id != exceptTokenId))
-        {
-            token.Revoke(nowUtc);
-        }
     }
 
     private Task<Result<Notification>> QueueVerificationEmailAsync(

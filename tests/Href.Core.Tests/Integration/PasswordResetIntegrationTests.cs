@@ -93,6 +93,7 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
         using var client = AppClient(factory, app);
 
         var first = await ForgotAsync(client, user.Email, cancellationToken);
+        await AgeTokensAsync(user.Id, cancellationToken);
         var second = await ForgotAsync(client, user.Email, cancellationToken);
 
         Assert.NotEqual(first, second);
@@ -101,6 +102,24 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
 
         await AssertProblemAsync(oldReset, HttpStatusCode.BadRequest, AuthErrors.InvalidOneTimeToken, cancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, newReset.StatusCode);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_WithinTheCooldown_Returns202AndKeepsTheFirstLink()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(cancellationToken);
+        var user = await SaveUserAsync(app, cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app);
+        var token = await ForgotAsync(client, user.Email, cancellationToken);
+
+        var again = await client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest(user.Email, ResetUrl), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Accepted, again.StatusCode);
+        Assert.Single(await ReadNotificationsAsync(user.Email, cancellationToken));
+        var reset = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(token, NewPassword), cancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
     }
 
     [Fact]
@@ -126,9 +145,11 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
         var user = await SaveUserAsync(app, cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
         using var client = AppClient(factory, app);
-        var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(user.Email, Password), cancellationToken);
-        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-        var session = (await login.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken))!;
+        var other = await SaveApplicationAsync(cancellationToken);
+        await GrantAccessAsync(user.Id, other, cancellationToken);
+        using var otherClient = AppClient(factory, other);
+        var session = await LoginAsync(client, user.Email, cancellationToken);
+        var otherSession = await LoginAsync(otherClient, user.Email, cancellationToken);
         var stampBefore = await ReadSecurityStampAsync(user.Id, cancellationToken);
         var token = await ForgotAsync(client, user.Email, cancellationToken);
 
@@ -137,6 +158,8 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
         Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
         var refresh = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(session.RefreshToken), cancellationToken);
         await AssertProblemAsync(refresh, HttpStatusCode.Unauthorized, AuthErrors.RefreshTokenRevoked, cancellationToken);
+        var otherRefresh = await otherClient.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(otherSession.RefreshToken), cancellationToken);
+        await AssertProblemAsync(otherRefresh, HttpStatusCode.Unauthorized, AuthErrors.RefreshTokenRevoked, cancellationToken);
         var oldPassword = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(user.Email, Password), cancellationToken);
         await AssertProblemAsync(oldPassword, HttpStatusCode.Unauthorized, AuthErrors.InvalidCredentials, cancellationToken);
         var newPassword = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(user.Email, NewPassword), cancellationToken);
@@ -147,7 +170,7 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
         var revoked = await verifySession.Query<RefreshToken>()
             .Where(candidate => candidate.UserId == user.Id && candidate.RevokedReason == RefreshTokenRevocationReason.PasswordReset)
             .ToListAsync(cancellationToken);
-        Assert.Single(revoked);
+        Assert.Equal(2, revoked.Count);
         var stored = await verifySession.Query<UserToken>().SingleAsync(candidate => candidate.UserId == user.Id, cancellationToken);
         Assert.NotNull(stored.ConsumedAtUtc);
 
@@ -175,9 +198,9 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
         await SaveAsync(verification.Token, cancellationToken);
 
         var foreign = await otherClient.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(token, NewPassword), cancellationToken);
+        var expiredResponse = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(expired.PlainToken, NewPassword), cancellationToken);
         var first = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(token, NewPassword), cancellationToken);
         var reused = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(token, "yet another passphrase"), cancellationToken);
-        var expiredResponse = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(expired.PlainToken, NewPassword), cancellationToken);
         var wrongPurpose = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(verification.PlainToken, NewPassword), cancellationToken);
         var missing = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(null, NewPassword), cancellationToken);
         var unknown = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest("not-a-real-token", NewPassword), cancellationToken);
@@ -226,6 +249,59 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
         await AssertProblemAsync(reset, HttpStatusCode.BadRequest, AuthErrors.InvalidOneTimeToken, cancellationToken);
         using var session = postgres.SessionFactory.OpenSession();
         Assert.Equal(hashBefore, (await session.GetAsync<User>(user.Id, cancellationToken)).PasswordHash);
+    }
+
+    [Fact]
+    public async Task ResetPassword_AfterTheAccessWasRevoked_Returns400AndKeepsThePassword()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(cancellationToken);
+        var user = await SaveUserAsync(app, cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app);
+        var token = await ForgotAsync(client, user.Email, cancellationToken);
+        string hashBefore;
+
+        using (var session = postgres.SessionFactory.OpenSession())
+        using (var transaction = session.BeginTransaction())
+        {
+            var access = await session.Query<UserApplicationAccess>().SingleAsync(candidate => candidate.UserId == user.Id, cancellationToken);
+            await session.DeleteAsync(access, cancellationToken);
+            hashBefore = (await session.GetAsync<User>(user.Id, cancellationToken)).PasswordHash;
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var reset = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(token, NewPassword), cancellationToken);
+
+        await AssertProblemAsync(reset, HttpStatusCode.BadRequest, AuthErrors.InvalidOneTimeToken, cancellationToken);
+        using var verifySession = postgres.SessionFactory.OpenSession();
+        Assert.Equal(hashBefore, (await verifySession.GetAsync<User>(user.Id, cancellationToken)).PasswordHash);
+    }
+
+    [Fact]
+    public async Task ResetPassword_AfterAnAdminChangedTheEmail_Returns400()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(cancellationToken);
+        var user = await SaveUserAsync(app, cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app);
+        using var admin = factory.CreateAdminClient();
+        var token = await ForgotAsync(client, user.Email, cancellationToken);
+        var verification = UserToken.Issue(user.Id, app.Id, UserTokenPurpose.EmailVerification, DateTime.UtcNow, UserToken.EmailVerificationLifetime);
+        await SaveAsync(verification.Token, cancellationToken);
+
+        var update = await admin.PutAsJsonAsync($"/api/users/{user.Id}", new UpdateUserRequest(UniqueEmail(), "Ana Pérez"), cancellationToken);
+        var reset = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest(token, NewPassword), cancellationToken);
+        var verify = await client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(verification.PlainToken), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        await AssertProblemAsync(reset, HttpStatusCode.BadRequest, AuthErrors.InvalidOneTimeToken, cancellationToken);
+        await AssertProblemAsync(verify, HttpStatusCode.BadRequest, AuthErrors.InvalidOneTimeToken, cancellationToken);
+        using var session = postgres.SessionFactory.OpenSession();
+        Assert.All(
+            await session.Query<UserToken>().Where(candidate => candidate.UserId == user.Id).ToListAsync(cancellationToken),
+            candidate => Assert.NotNull(candidate.RevokedAtUtc));
     }
 
     [Fact]
@@ -290,6 +366,27 @@ public sealed partial class PasswordResetIntegrationTests(PostgresFixture postgr
         var notification = (await ReadNotificationsAsync(email, cancellationToken)).Last();
         Assert.Equal(AccountService.ResetPasswordTemplateKey, notification.TemplateKey);
         return ExtractToken(notification.TextBody);
+    }
+
+    private static async Task<TokenResponse> LoginAsync(HttpClient client, string email, CancellationToken cancellationToken)
+    {
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, Password), cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken))!;
+    }
+
+    private Task GrantAccessAsync(Guid userId, SeededApplication app, CancellationToken cancellationToken) =>
+        SaveAsync(UserApplicationAccess.Grant(userId, app.Id, []).Value, cancellationToken);
+
+    private async Task AgeTokensAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "UPDATE user_tokens SET created_at_utc = created_at_utc - interval '2 minutes' WHERE user_id = @userId",
+            connection);
+        command.Parameters.AddWithValue("userId", userId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static HttpClient AppClient(ApiFactory factory, SeededApplication app)
