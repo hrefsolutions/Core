@@ -57,6 +57,7 @@ public sealed class AdminAuthorizationIntegrationTests(PostgresFixture postgres)
         { "PUT", "/api/notifications/templates/some-template" },
         { "DELETE", "/api/notifications/templates/some-template" },
         { "POST", "/api/notifications/templates/some-template/preview" },
+        { "GET", "/api/audit-logs" },
     };
 
     [Theory]
@@ -238,7 +239,8 @@ public sealed class AdminAuthorizationIntegrationTests(PostgresFixture postgres)
 
             var isAdminRoute = (route.StartsWith("api/apps", StringComparison.Ordinal) && route != "api/apps/me")
                 || route.StartsWith("api/users", StringComparison.Ordinal)
-                || route.StartsWith("api/notifications/templates", StringComparison.Ordinal);
+                || route.StartsWith("api/notifications/templates", StringComparison.Ordinal)
+                || route.StartsWith("api/audit-logs", StringComparison.Ordinal);
 
             if (isAdminRoute)
             {

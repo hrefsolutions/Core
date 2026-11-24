@@ -64,6 +64,7 @@ try
     builder.Services.AddScoped<AccountService>();
     builder.Services.AddSingleton<DummyPasswordHash>();
     builder.Services.AddScoped<IAuditService, AuditService>();
+    builder.Services.AddScoped<AuditLogQueryService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
     builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
     builder.Services.AddSmtpEmail(builder.Configuration);
