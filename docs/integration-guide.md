@@ -232,7 +232,8 @@ Every expected error is an RFC 7807 `ProblemDetails` (`application/problem+json`
 |---|---|
 | 10 per minute, shared | `login`, `register`, `forgot-password`, `resend-verification` |
 | 60 per minute | `refresh` |
+| 20 attempts per 15 minutes, per account | `login` (counted by email, across every application and IP; a correct password resets it) |
 
-- Over the limit you get `429` with `errorCode` `RateLimit.Exceeded` and a `Retry-After` header in seconds. Wait that long before retrying, and show the user a "too many attempts" message.
+- Over any limit you get `429` with `errorCode` `RateLimit.Exceeded` and a `Retry-After` header in seconds (up to 15 minutes for the per-account limit). Wait that long before retrying, and show the user a "too many attempts" message.
 - Requests without valid M2M credentials get `401` before the limiter.
 - Other endpoints are not rate limited. Bodies have size limits: 8 MB for `POST /api/notifications/email` and the template administration, and 64 KB for the auth endpoints. A larger body returns `413` with `errorCode` `Request.TooLarge`.

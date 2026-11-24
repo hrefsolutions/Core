@@ -37,6 +37,12 @@ public static class ResultExtensions
 
         problemDetails.Extensions["errorCode"] = error.Code;
 
+        if (error is { Type: ErrorType.TooManyRequests, RetryAfter: { } retryAfter })
+        {
+            var seconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+            controller.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         return new ObjectResult(problemDetails)
         {
             StatusCode = statusCode,
@@ -51,6 +57,7 @@ public static class ResultExtensions
             ErrorType.Forbidden => (StatusCodes.Status403Forbidden, "Forbidden.", "https://tools.ietf.org/html/rfc9110#section-15.5.4"),
             ErrorType.NotFound => (StatusCodes.Status404NotFound, "Resource not found.", "https://tools.ietf.org/html/rfc9110#section-15.5.5"),
             ErrorType.Conflict => (StatusCodes.Status409Conflict, "Conflict.", "https://tools.ietf.org/html/rfc9110#section-15.5.10"),
+            ErrorType.TooManyRequests => (StatusCodes.Status429TooManyRequests, "Too many requests.", "https://tools.ietf.org/html/rfc6585#section-4"),
             _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.", "https://tools.ietf.org/html/rfc9110#section-15.6.1"),
         };
 }

@@ -65,6 +65,7 @@ try
     builder.Services.AddScoped<UserSessionsService>();
     builder.Services.AddScoped<AccountService>();
     builder.Services.AddSingleton<DummyPasswordHash>();
+    builder.Services.AddSingleton<LoginAttemptThrottle>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddScoped<AuditLogQueryService>();
     builder.Services.AddScoped<AuditLogExportService>();
