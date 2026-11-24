@@ -8,8 +8,8 @@ namespace Href.Core.Api.Modules.Auth;
 
 /// <summary>
 /// In-memory fixed-window rate limits for the M2M auth endpoints (Railway runs a single instance). Each window is
-/// partitioned by the calling application's <c>AppKey</c> plus the end user's IP (<see cref="EndUserIp"/>), so a satellite
-/// that does not forward <c>X-End-User-Ip</c> shares one budget among all its users. The limiter runs after
+/// partitioned by the calling application's <c>AppKey</c> plus the end user's IP (<see cref="EndUserIp"/>; an IPv6 address
+/// counts as its /64 network), so a satellite that does not forward <c>X-End-User-Ip</c> shares one budget among all its users. The limiter runs after
 /// <c>UseAuthorization</c>, where the <c>AppKey</c> is known: requests without valid M2M credentials get <c>401</c> before
 /// it. A rejected request gets <c>429</c> as <see cref="ProblemDetails"/> (<c>errorCode</c> <see cref="ErrorCode"/>) with
 /// <c>Retry-After</c>.
@@ -34,7 +34,7 @@ public static class AuthRateLimiting
 
     private static RateLimitPartition<string> CreatePartition(HttpContext context, int permitLimit) =>
         RateLimitPartition.GetFixedWindowLimiter(
-            $"{context.User.GetAppKey()}|{EndUserIp.Resolve(context)}",
+            $"{context.User.GetAppKey()}|{EndUserIp.ToRateLimitKey(EndUserIp.Resolve(context))}",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = permitLimit,
@@ -61,10 +61,15 @@ public static class AuthRateLimiting
         };
         problemDetails.Extensions["errorCode"] = ErrorCode;
 
-        await httpContext.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
+        var written = await httpContext.RequestServices.GetRequiredService<IProblemDetailsService>().TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
             ProblemDetails = problemDetails,
         });
+
+        if (!written)
+        {
+            await httpContext.Response.WriteAsJsonAsync(problemDetails, (System.Text.Json.JsonSerializerOptions?)null, "application/problem+json", cancellationToken);
+        }
     }
 }

@@ -168,13 +168,98 @@ public sealed class AuthRateLimitingIntegrationTests(PostgresFixture postgres)
         var cancellationToken = TestContext.Current.CancellationToken;
         var app = await SaveApplicationAsync(cancellationToken);
         await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = AppClient(factory, app, "not-an-ip");
+        using var client = AppClient(factory, app, "10");
         var email = UniqueEmail();
 
         await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, Password), cancellationToken);
 
         var row = Assert.Single(await ReadLoginFailedAsync(email, cancellationToken));
-        Assert.NotEqual("not-an-ip", row.IpAddress);
+        Assert.Null(row.IpAddress);
+    }
+
+    [Fact]
+    public async Task Login_WithAControlCharacterInTheEmail_Returns401AndRecordsNoRawInput()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app, EndUserAddress);
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest("a\u0000b-secret-typed-here", Password), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var row = Assert.Single(await ReadLoginFailedForAppAsync(app.AppKey, cancellationToken));
+        using var values = JsonDocument.Parse(row.NewValues);
+        Assert.Equal(JsonValueKind.Null, values.RootElement.GetProperty("email").ValueKind);
+        Assert.Equal(nameof(LoginFailureReason.UnknownEmail), values.RootElement.GetProperty("reason").GetString());
+        Assert.DoesNotContain("secret-typed-here", row.NewValues, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AdminRequest_WithAnEndUserIpHeader_DoesNotRecordTheHeader()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var admin = factory.CreateAdminClient();
+        admin.DefaultRequestHeaders.Add(EndUserIp.HeaderName, EndUserAddress);
+        var email = UniqueEmail();
+
+        var response = await admin.PostAsJsonAsync("/api/users", new CreateUserRequest(email, "Ana", Password), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<UserResponse>(cancellationToken);
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "SELECT ip_address FROM audit_logs WHERE action = @action AND entity_id = @userId",
+            connection);
+        command.Parameters.AddWithValue("action", AuditActions.UserCreated);
+        command.Parameters.AddWithValue("userId", created!.Id.ToString());
+        var ipAddress = await command.ExecuteScalarAsync(cancellationToken);
+        Assert.NotEqual(EndUserAddress, ipAddress as string);
+    }
+
+    [Theory]
+    [InlineData(new[] { "2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:ffff" }, true)]
+    [InlineData(new[] { "2001:db8:1:2::1", "2001:db8:1:3::1" }, false)]
+    public async Task Login_IPv6AddressesOfTheSameSlash64_ShareTheLimit(string[] addresses, bool shared)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var first = AppClient(factory, app, addresses[0]);
+        using var second = AppClient(factory, app, addresses[1]);
+        var request = new LoginRequest(UniqueEmail(), Password);
+
+        for (var attempt = 1; attempt <= AuthRateLimiting.StrictPermitLimit; attempt++)
+        {
+            await first.PostAsJsonAsync("/api/auth/login", request, cancellationToken);
+        }
+
+        var response = await second.PostAsJsonAsync("/api/auth/login", request, cancellationToken);
+
+        Assert.Equal(shared ? HttpStatusCode.TooManyRequests : HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Login_OverTheLimitWithAPlainTextAcceptHeader_StillReturns429()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var app = await SaveApplicationAsync(cancellationToken);
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = AppClient(factory, app, EndUserAddress);
+        client.DefaultRequestHeaders.Accept.ParseAdd("text/plain");
+        var request = new LoginRequest(UniqueEmail(), Password);
+
+        for (var attempt = 1; attempt <= AuthRateLimiting.StrictPermitLimit; attempt++)
+        {
+            await client.PostAsJsonAsync("/api/auth/login", request, cancellationToken);
+        }
+
+        var rejected = await client.PostAsJsonAsync("/api/auth/login", request, cancellationToken);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.True(rejected.Headers.Contains("Retry-After"));
     }
 
     [Fact]
@@ -264,6 +349,30 @@ public sealed class AuthRateLimitingIntegrationTests(PostgresFixture postgres)
             connection);
         command.Parameters.AddWithValue("action", AuditActions.LoginFailed);
         command.Parameters.AddWithValue("email", email);
+        var rows = new List<LoginFailedRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new LoginFailedRow(
+                reader.IsDBNull(0) ? null : reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.GetString(3)));
+        }
+
+        return rows;
+    }
+
+    private async Task<List<LoginFailedRow>> ReadLoginFailedForAppAsync(string appKey, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "SELECT app_key, ip_address, entity_id, new_values::text FROM audit_logs WHERE action = @action AND app_key = @appKey",
+            connection);
+        command.Parameters.AddWithValue("action", AuditActions.LoginFailed);
+        command.Parameters.AddWithValue("appKey", appKey);
         var rows = new List<LoginFailedRow>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 

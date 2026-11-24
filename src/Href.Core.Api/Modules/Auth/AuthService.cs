@@ -29,11 +29,6 @@ public sealed class AuthService(
     public const string RefreshTokenFamilyEntityType = "RefreshTokenFamily";
 
     /// <summary>
-    /// Longest raw email kept in a <c>LOGIN_FAILED</c> snapshot when the requested email is not a valid address.
-    /// </summary>
-    public const int LoginFailedEmailMaxLength = 320;
-
-    /// <summary>
     /// Checks the credentials and issues an access token and a new refresh token family for the calling application.
     /// A malformed or unknown email, an empty password and a wrong password return the same
     /// <see cref="AuthErrors.InvalidCredentials"/> after exactly one password hash verification; the account state is
@@ -139,16 +134,16 @@ public sealed class AuthService(
 
     /// <summary>
     /// Records <c>LOGIN_FAILED</c> (<c>EntityType = User</c>, the user id when the email exists, snapshot
-    /// <see cref="LoginFailedAuditSnapshot"/> with the email and the reason, never the password) in its own transaction,
-    /// because the login transaction is never committed. The session is cleared first, so nothing loaded or changed by the
-    /// failed attempt is flushed with it.
+    /// <see cref="LoginFailedAuditSnapshot"/> with the normalized email and the reason, never the password) in its own
+    /// transaction, because the login transaction is never committed. The session is cleared first, so nothing loaded or
+    /// changed by the failed attempt is flushed with it.
     /// </summary>
     private async Task RecordLoginFailedAsync(string? requestedEmail, LoginFailure failure, CancellationToken cancellationToken)
     {
         session.Clear();
 
         var normalized = User.NormalizeEmail(requestedEmail);
-        var email = normalized.IsSuccess ? normalized.Value : Truncate(requestedEmail?.Trim(), LoginFailedEmailMaxLength);
+        var email = normalized.IsSuccess ? normalized.Value : null;
 
         using var transaction = session.BeginTransaction();
         await auditService.RecordAsync(
@@ -165,9 +160,6 @@ public sealed class AuthService(
         error == AuthErrors.UserLocked ? LoginFailureReason.UserLocked
         : error == AuthErrors.EmailNotVerified ? LoginFailureReason.EmailNotVerified
         : LoginFailureReason.NoAccessToApplication;
-
-    private static string? Truncate(string? value, int maxLength) =>
-        value is null || value.Length <= maxLength ? value : value[..maxLength];
 
     private sealed record LoginFailure(Guid? UserId, LoginFailureReason Reason);
 

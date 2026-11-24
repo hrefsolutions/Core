@@ -53,6 +53,27 @@ public sealed class EndUserIpTests
     }
 
     [Fact]
+    public void Resolve_ForAnAdminBearerPrincipalWithAnAppKeyClaim_IgnoresTheHeader()
+    {
+        var context = CreateContext(authenticatedApp: false, "203.0.113.7");
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(AppKeyAuthentication.AppKeyClaimType, "core"), new Claim("sub", Guid.NewGuid().ToString())],
+            "AuthenticationTypes.Federation"));
+
+        Assert.Equal("192.0.2.10", EndUserIp.Resolve(context));
+    }
+
+    [Theory]
+    [InlineData("203.0.113.7", "203.0.113.7")]
+    [InlineData("2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64")]
+    [InlineData("2001:db8:1:2::ffff", "2001:db8:1:2::/64")]
+    [InlineData(null, null)]
+    public void ToRateLimitKey_ReducesIpv6ToItsSlash64(string? address, string? expected)
+    {
+        Assert.Equal(expected, EndUserIp.ToRateLimitKey(address));
+    }
+
+    [Fact]
     public void Resolve_WithoutHeaderOrConnectionAddress_ReturnsNull()
     {
         var context = CreateContext(authenticatedApp: true, header: null);

@@ -47,8 +47,9 @@ public sealed record IssuedAccessToken(string Token, DateTime ExpiresAtUtc, int 
 public sealed record LoginAuditSnapshot(Guid UserId, string Email, Guid RefreshTokenFamilyId);
 
 /// <summary>
-/// Audit snapshot of a failed login (<c>LOGIN_FAILED</c>): the requested email (normalized when it is a valid address) and
-/// the <see cref="LoginFailureReason"/> name; never the password.
+/// Audit snapshot of a failed login (<c>LOGIN_FAILED</c>): the normalized email (<c>null</c> when the input is not a valid
+/// address: raw input is never stored, it may be a password typed in the wrong field) and the
+/// <see cref="LoginFailureReason"/> name; never the password.
 /// </summary>
 public sealed record LoginFailedAuditSnapshot(string? Email, string Reason);
 
