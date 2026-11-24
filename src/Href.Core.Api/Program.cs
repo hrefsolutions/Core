@@ -61,6 +61,7 @@ try
     builder.Services.AddScoped<ApplicationAccessService>();
     builder.Services.AddScoped<AuthService>();
     builder.Services.AddScoped<UserSessionsService>();
+    builder.Services.AddScoped<AccountService>();
     builder.Services.AddSingleton<DummyPasswordHash>();
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
@@ -84,6 +85,7 @@ try
             .RequireAuthenticatedUser()
             .RequireClaim(AccessTokenFactory.PermissionsClaimType, CoreApplication.AdminPermissionKey));
     builder.Services.AddAdminBootstrap(builder.Configuration);
+    builder.Services.AddAuthRateLimiting();
 
     var app = builder.Build();
 
@@ -97,6 +99,7 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseMiddleware<AppKeyLogContextMiddleware>();
+    app.UseRateLimiter();
     app.MapControllers();
 
     app.Run();

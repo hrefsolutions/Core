@@ -47,12 +47,29 @@ public sealed class AuthService(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(client);
 
+        var attempt = await AttemptLoginAsync(applicationId, appKey, request, client, cancellationToken);
+
+        if (attempt.Failure is { } failure)
+        {
+            await RecordLoginFailedAsync(request.Email, failure, cancellationToken);
+        }
+
+        return attempt.Result;
+    }
+
+    private async Task<LoginAttempt> AttemptLoginAsync(
+        Guid applicationId,
+        string appKey,
+        LoginRequest request,
+        AuthClientInfo client,
+        CancellationToken cancellationToken)
+    {
         var email = User.NormalizeEmail(request.Email);
 
-        if (email.IsFailure || string.IsNullOrEmpty(request.Password))
+        if (email.IsFailure)
         {
             dummyPasswordHash.Verify(request.Password);
-            return AuthErrors.InvalidCredentials;
+            return LoginAttempt.Failed(AuthErrors.InvalidCredentials, null, LoginFailureReason.UnknownEmail);
         }
 
         var candidate = await session.Query<User>()
@@ -61,7 +78,13 @@ public sealed class AuthService(
         if (candidate is null)
         {
             dummyPasswordHash.Verify(request.Password);
-            return AuthErrors.InvalidCredentials;
+            return LoginAttempt.Failed(AuthErrors.InvalidCredentials, null, LoginFailureReason.UnknownEmail);
+        }
+
+        if (string.IsNullOrEmpty(request.Password))
+        {
+            dummyPasswordHash.Verify(request.Password);
+            return LoginAttempt.Failed(AuthErrors.InvalidCredentials, candidate.Id, LoginFailureReason.InvalidPassword);
         }
 
         var verifiedHash = candidate.PasswordHash;
@@ -71,7 +94,7 @@ public sealed class AuthService(
 
         if (!passwordValid)
         {
-            return AuthErrors.InvalidCredentials;
+            return LoginAttempt.Failed(AuthErrors.InvalidCredentials, candidate.Id, LoginFailureReason.InvalidPassword);
         }
 
         using var transaction = session.BeginTransaction();
@@ -81,14 +104,14 @@ public sealed class AuthService(
 
         if ((rehashPending || user.PasswordHash != verifiedHash) && !user.VerifyPassword(request.Password, passwordHasher))
         {
-            return AuthErrors.InvalidCredentials;
+            return LoginAttempt.Failed(AuthErrors.InvalidCredentials, user.Id, LoginFailureReason.InvalidPassword);
         }
 
         var accessResult = await CheckUserCanSignInAsync(user, applicationId, cancellationToken);
 
         if (accessResult.IsFailure)
         {
-            return accessResult.Error;
+            return LoginAttempt.Failed(accessResult.Error, user.Id, ToFailureReason(accessResult.Error));
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -106,7 +129,44 @@ public sealed class AuthService(
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return CreateResponse(user, appKey, accessResult.Value, issued);
+        return new LoginAttempt(CreateResponse(user, appKey, accessResult.Value, issued), null);
+    }
+
+    /// <summary>
+    /// Records <c>LOGIN_FAILED</c> (<c>EntityType = User</c>, the user id when the email exists, snapshot
+    /// <see cref="LoginFailedAuditSnapshot"/> with the normalized email and the reason, never the password) in its own
+    /// transaction, because the login transaction is never committed. The session is cleared first, so nothing loaded or
+    /// changed by the failed attempt is flushed with it.
+    /// </summary>
+    private async Task RecordLoginFailedAsync(string? requestedEmail, LoginFailure failure, CancellationToken cancellationToken)
+    {
+        session.Clear();
+
+        var normalized = User.NormalizeEmail(requestedEmail);
+        var email = normalized.IsSuccess ? normalized.Value : null;
+
+        using var transaction = session.BeginTransaction();
+        await auditService.RecordAsync(
+            new AuditEntry(
+                AuditActions.LoginFailed,
+                EntityType: nameof(User),
+                EntityId: failure.UserId?.ToString(),
+                NewValues: new LoginFailedAuditSnapshot(email, failure.Reason.ToString())),
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static LoginFailureReason ToFailureReason(Error error) =>
+        error == AuthErrors.UserLocked ? LoginFailureReason.UserLocked
+        : error == AuthErrors.EmailNotVerified ? LoginFailureReason.EmailNotVerified
+        : LoginFailureReason.NoAccessToApplication;
+
+    private sealed record LoginFailure(Guid? UserId, LoginFailureReason Reason);
+
+    private sealed record LoginAttempt(Result<TokenResponse> Result, LoginFailure? Failure)
+    {
+        public static LoginAttempt Failed(Error error, Guid? userId, LoginFailureReason reason) =>
+            new(error, new LoginFailure(userId, reason));
     }
 
     /// <summary>
