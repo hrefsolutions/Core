@@ -98,6 +98,8 @@ The defaults come from the code or from `appsettings.json` and work on Railway. 
 
 | Variable | Default | Notes |
 |---|---|---|
+| `ConnectionStrings__Migrations` | `ConnectionStrings__DefaultConnection` | Connection of the schema owner, used only by the migrations and the grants at startup. Set it together with `Database__RuntimeRole` (see [Least-privilege database role](#least-privilege-database-role)). |
+| `Database__RuntimeRole` | none | Name of the role the API itself connects as (lowercase identifier). On every startup with migrations, the owner grants it read and write on the tables, only `SELECT` and `INSERT` on `audit_logs`, and nothing on `schemaversions`. The API does not start if the role does not exist, is a superuser or is the owner connection's own user. |
 | `Database__MigrateOnStartup` | `true` | DbUp applies the pending SQL migrations (`Database/Migrations/*.sql`) on startup, each in its own transaction and once per database (journal table `schemaversions`). If a migration fails, the API does not start. `false` starts the API without migrating. |
 | `Smtp__Host` | `smtp.gmail.com` | Required, not blank. |
 | `Smtp__Port` | `465` | 1..65535. Gmail: `465` with `SslOnConnect`, or `587` with `StartTls`. |
@@ -119,6 +121,24 @@ The defaults come from the code or from `appsettings.json` and work on Railway. 
 
 The API does not start with an invalid `Smtp`, `Notifications:Worker` or `AuditLogs:Export` configuration (values out of range, unknown `SecureSocket`, only one of `Smtp__Username` / `Smtp__Password`, credentials with `None`). The deploy logs show which value failed.
 
+## Least-privilege database role
+
+By default the API connects with the Railway PostgreSQL user, which owns the tables and is a superuser: with it, the API could disable the trigger that keeps `audit_logs` append-only. Outside Development the API logs the warning `The API connects to PostgreSQL as a superuser or as the owner of audit_logs` until it runs as a separate role:
+
+1. In the Railway PostgreSQL service (Data → Query, or `psql` with the service credentials), create the role with a strong random password:
+
+   ```sql
+   CREATE ROLE href_core_app LOGIN PASSWORD '<strong random password>';
+   ```
+
+2. In the Href.Core service set:
+   - `ConnectionStrings__Migrations` = the current connection string (the owner user);
+   - `ConnectionStrings__DefaultConnection` = the same host and database with `Username=href_core_app;Password=<that password>`;
+   - `Database__RuntimeRole` = `href_core_app`.
+3. Redeploy. The log shows `Granted the runtime database privileges to role href_core_app` and the warning above no longer appears.
+
+The grants run after the migrations on every startup, so tables added later are covered. With `Database__MigrateOnStartup=false` nothing is granted.
+
 ## First deploy checklist
 
 1. Create the PostgreSQL service and the Href.Core service (from this repository, root `Dockerfile`), with no public domain before v0.4.0 (admin authentication). Set the health check path of the Href.Core service to `/health`.
@@ -133,5 +153,6 @@ The API does not start with an invalid `Smtp`, `Notifications:Worker` or `AuditL
 4. Call `GET /health`: it returns `200` with `Healthy`. `GET /.well-known/jwks.json` returns the key with the `kid` you set.
 5. Log in as the admin (see [First admin](#first-admin)). With the bearer token, create an application (`POST /api/apps`). Queue a test email with its credentials (`POST /api/notifications/email`) and check that it arrives.
 6. Remove the `Bootstrap__*` variables and redeploy.
+7. Move the API to the least-privilege role (see [Least-privilege database role](#least-privilege-database-role)).
 
 Keep this file in sync with `## Environment variables` in `SYSTEM_MAP.md` when a configuration key is added or changed.

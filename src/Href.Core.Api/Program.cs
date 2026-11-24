@@ -99,6 +99,7 @@ try
     var app = builder.Build();
 
     DatabaseMigrator.MigrateIfEnabled(app.Configuration, app.Environment, app.Logger);
+    DatabaseRuntimeRole.WarnIfRuntimeConnectionIsPrivileged(app.Configuration, app.Environment, app.Logger);
 
     app.UseForwardedHeaders();
     app.UseMiddleware<CorrelationIdMiddleware>();

@@ -30,7 +30,7 @@ public static class DatabaseMigrator
             return;
         }
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = DatabaseRuntimeRole.GetOwnerConnectionString(configuration);
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -38,6 +38,13 @@ public static class DatabaseMigrator
         }
 
         Migrate(connectionString, logger, ensureDatabase: environment.IsDevelopment());
+
+        var runtimeRole = configuration[DatabaseRuntimeRole.RoleKey];
+
+        if (!string.IsNullOrWhiteSpace(runtimeRole))
+        {
+            DatabaseRuntimeRole.GrantPrivileges(connectionString, runtimeRole, logger);
+        }
     }
 
     public static void Migrate(
