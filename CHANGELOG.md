@@ -6,6 +6,13 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ### Agregado
 
+- Documentación interactiva de la API y guía de integración (#31):
+  - **`/openapi/v1.json`** (OpenAPI con `Microsoft.AspNetCore.OpenApi`) y **`/scalar`** (Scalar, con "Try it"), anónimos y activos por defecto. La variable nueva `OpenApi__Enabled=false` los apaga (`404`).
+  - **Esquemas de seguridad:** `AppKey` + `AppSecret` (headers `X-App-Key` / `X-App-Secret`) y `Bearer` (JWT de admin). Cada operación pide el de su policy y documenta su `401` / `403` con el `errorCode`, el `429` si tiene rate limit y el `413` si limita el tamaño del body. Un test recorre todos los endpoints y verifica que el documento coincida con su policy.
+  - **Respuestas:** los 51 endpoints declaran sus respuestas (`ProducesResponseType`) y listan sus `errorCode` en la descripción (`/// <response>`). El esquema `ProblemDetails` documenta `errorCode` y `correlationId`.
+  - **Detrás del proxy de Railway**, la URL del servidor del documento sale `https`.
+  - **`docs/integration-guide.md`:** registro de la app y su secret, headers M2M y `X-End-User-Ip`, envío de emails, login/refresh/logout desde el backend, flujos de cuenta y páginas que aloja la app, validación del JWT en un satélite .NET con `AddJwtBearer`, formato de errores y rate limits.
+  - `SYSTEM_MAP.md` ahora lista los `409` que faltaban: `Applications.Reserved`, `Applications.AlreadyActive` / `AlreadySuspended`, `Authorization.Reserved` y `Authorization.AccessAlreadyGranted`.
 - Consulta del registro de auditoría (#29): **`GET /api/audit-logs`**, solo para admin (`core.admin`).
   - **Filtros** opcionales, combinados con AND; los valores vacíos se ignoran:
     - `from` y `to`: inclusivos, en ISO 8601. Sin zona horaria se toman como UTC. Con solo la fecha (`yyyy-MM-dd`, día UTC), `from` empieza a las 00:00 y `to` cubre el día entero; un `+` del offset se manda como `%2B`. Si `from` es posterior a `to`, devuelve `400 AuditLogs.InvalidRange`, y una fecha ilegible `400 AuditLogs.InvalidDate`.

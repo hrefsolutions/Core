@@ -20,8 +20,20 @@ public sealed class NotificationsController(NotificationService notificationServ
     /// </summary>
     public const int MaxRequestBodyBytes = 8 * 1024 * 1024;
 
+    /// <summary>
+    /// Queues one email for the calling application, either from a stored template (<c>templateKey</c> + <c>variables</c>)
+    /// or from caller content (<c>html</c> + <c>subject</c>, optional <c>text</c>), never both.
+    /// </summary>
+    /// <response code="202">`{ id, status }` of the queued notification; `Location` points to `GET /api/notifications/{id}`.</response>
+    /// <response code="400">`Notifications.InvalidContent`, `Notifications.InvalidRecipient`, `Notifications.InvalidRecipientName`, `Notifications.InvalidSubject`, `Notifications.InvalidNotifyOnFailureTo`, `Notifications.ContentTooLarge`, `Templates.MissingVariables`, `Templates.DuplicateVariables` or `Templates.RenderedContentTooLarge`; a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
+    /// <response code="404">`Templates.NotFound` (the key is exact and case-sensitive).</response>
+    /// <response code="413">The request body is larger than 8 MB.</response>
     [HttpPost("email")]
     [RequestSizeLimit(MaxRequestBodyBytes)]
+    [ProducesResponseType<QueuedNotificationResponse>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
     public async Task<IActionResult> QueueEmail(
         [FromBody] QueueEmailRequest request,
         CancellationToken cancellationToken)
@@ -49,7 +61,14 @@ public sealed class NotificationsController(NotificationService notificationServ
             new QueuedNotificationResponse(notification.Id, notification.Status.ToString()));
     }
 
+    /// <summary>
+    /// Lists the notifications of the calling application, newest first, without bodies.
+    /// </summary>
+    /// <response code="200">`{ items, page, pageSize, totalCount }`.</response>
+    /// <response code="400">`Notifications.InvalidStatus`, `Notifications.InvalidDateRange`, `Notifications.InvalidPage` or `Notifications.InvalidPageSize`; unparsable dates or numbers return the framework `ValidationProblemDetails` without `errorCode`.</response>
     [HttpGet]
+    [ProducesResponseType<NotificationPageResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> List(
         [FromQuery] string? status,
         [FromQuery(Name = "from")] DateTimeOffset? createdFrom,
@@ -75,7 +94,14 @@ public sealed class NotificationsController(NotificationService notificationServ
             : Ok(result.Value);
     }
 
+    /// <summary>
+    /// Returns one notification of the calling application, without bodies.
+    /// </summary>
+    /// <response code="200">The notification.</response>
+    /// <response code="404">`Notifications.NotFound` for an unknown id or another application's notification.</response>
     [HttpGet("{id:guid}")]
+    [ProducesResponseType<NotificationResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var appKey = User.GetAppKey();

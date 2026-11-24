@@ -15,7 +15,15 @@ public sealed class AuditLogsController(
     AuditLogQueryService queryService,
     AuditLogExportService exportService) : ControllerBase
 {
+    /// <summary>
+    /// Returns one page of the audit trail, newest first (<c>occurredAtUtc DESC, id DESC</c>), filtered by the optional
+    /// query parameters combined with AND.
+    /// </summary>
+    /// <response code="200">`{ items, page, pageSize, totalCount }` with `Cache-Control: no-store`.</response>
+    /// <response code="400">`AuditLogs.InvalidPage`, `AuditLogs.InvalidPageSize`, `AuditLogs.InvalidDate`, `AuditLogs.InvalidRange`, `AuditLogs.InvalidActorType` or `AuditLogs.InvalidFilter`; unparsable numbers return the framework `ValidationProblemDetails` without `errorCode`.</response>
     [HttpGet]
+    [ProducesResponseType<AuditLogPageResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> List(
         [FromQuery] string? from,
         [FromQuery] string? to,
@@ -44,7 +52,11 @@ public sealed class AuditLogsController(
     /// Downloads every row matching the filters of <see cref="List"/> (no paging), oldest first, as <c>format=csv</c> or
     /// <c>format=json</c>.
     /// </summary>
+    /// <response code="200">The streamed file (`text/csv; charset=utf-8` with BOM, or a JSON array as `application/json; charset=utf-8`) with `Content-Disposition: attachment` and `Cache-Control: no-store`.</response>
+    /// <response code="400">`AuditLogs.InvalidFormat`, `AuditLogs.ExportTooLarge`, or the filter codes of the list: `AuditLogs.InvalidDate`, `AuditLogs.InvalidRange`, `AuditLogs.InvalidActorType` or `AuditLogs.InvalidFilter`.</response>
     [HttpGet("export")]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK, "text/csv", "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> Export(
         [FromQuery] string? format,
         [FromQuery] string? from,
