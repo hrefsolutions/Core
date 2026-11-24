@@ -83,6 +83,7 @@ try
             .RequireAuthenticatedUser()
             .RequireClaim(AccessTokenFactory.PermissionsClaimType, CoreApplication.AdminPermissionKey));
     builder.Services.AddAdminBootstrap(builder.Configuration);
+    builder.Services.AddAuthRateLimiting();
 
     var app = builder.Build();
 
@@ -96,6 +97,7 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseMiddleware<AppKeyLogContextMiddleware>();
+    app.UseRateLimiter();
     app.MapControllers();
 
     app.Run();

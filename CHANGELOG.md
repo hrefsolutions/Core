@@ -33,6 +33,14 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
     - Toma los locks en el mismo orden que el login: el advisory lock de refresh tokens, la fila del usuario y la del token. Dos usos simultáneos del mismo token dan un `204` y un `400`.
   - **Cambio de email por admin** (`PUT /api/users/{id}`): revoca los tokens de un solo uso abiertos del usuario (verificación y reset), así un link enviado a la dirección anterior deja de servir.
   - **Limitación conocida:** `forgot-password` y `resend-verification` siempre responden `202`, pero con una cuenta existente tardan más, así que el tiempo de respuesta puede revelar si un email está registrado.
+- Rate limiting en los endpoints de auth y auditoría de logins fallidos (#28):
+  - **Header `X-End-User-Ip`** (opcional): el backend satélite manda la IP de su usuario final. Se usa solo en requests autenticados con M2M y si es una IP válida; si no, se usa la IP de la conexión. En producción el satélite **tiene** que mandarlo: sin él, todos sus usuarios comparten un mismo cupo.
+  - **Límites** (en memoria, ventana fija de 1 minuto, por `AppKey` + IP del usuario final):
+    - 10 requests entre `login`, `register`, `forgot-password` y `resend-verification`;
+    - 60 requests de `refresh`.
+  - **Al pasarse:** `429` como `ProblemDetails` con `errorCode` `RateLimit.Exceeded` y el header `Retry-After`.
+  - **`LOGIN_FAILED`:** cada login fallido queda auditado en su propia transacción, con el email, el motivo (`UnknownEmail`, `InvalidPassword`, `EmailNotVerified`, `UserLocked` o `NoAccessToApplication`) y la IP del usuario final. Nunca guarda la contraseña.
+  - **Auditoría:** `audit_logs.ip_address` ahora guarda la IP del usuario final cuando el satélite la manda.
 
 ## 0.4.0 - 2026-11-23
 

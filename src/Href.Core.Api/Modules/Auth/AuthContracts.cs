@@ -47,6 +47,25 @@ public sealed record IssuedAccessToken(string Token, DateTime ExpiresAtUtc, int 
 public sealed record LoginAuditSnapshot(Guid UserId, string Email, Guid RefreshTokenFamilyId);
 
 /// <summary>
+/// Audit snapshot of a failed login (<c>LOGIN_FAILED</c>): the requested email (normalized when it is a valid address) and
+/// the <see cref="LoginFailureReason"/> name; never the password.
+/// </summary>
+public sealed record LoginFailedAuditSnapshot(string? Email, string Reason);
+
+/// <summary>
+/// Why a login failed, as recorded in <c>LOGIN_FAILED</c>. The response does not say it: the first two reasons both
+/// return <c>401 Auth.InvalidCredentials</c>.
+/// </summary>
+public enum LoginFailureReason
+{
+    UnknownEmail,
+    InvalidPassword,
+    EmailNotVerified,
+    UserLocked,
+    NoAccessToApplication,
+}
+
+/// <summary>
 /// Audit snapshot of a refresh token reuse; never contains tokens or hashes.
 /// </summary>
 public sealed record RefreshTokenReuseAuditSnapshot(Guid UserId, Guid FamilyId, int RevokedCount);
