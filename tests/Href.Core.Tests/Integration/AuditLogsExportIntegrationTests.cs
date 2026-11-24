@@ -145,6 +145,47 @@ public sealed class AuditLogsExportIntegrationTests(PostgresFixture postgres)
         Assert.Equal("[]", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
+    public static TheoryData<string> SingleFilters => new()
+    {
+        "appKey=app-a",
+        "actorType=System",
+        "actorId=actor-b",
+        "action=ACTION_A",
+        "entityType=Type-b",
+        "entityId=id-a",
+        "from=2021-07-01T11:00:00Z",
+        "to=2021-07-01T11:00:00Z",
+        "from=2021-07-01T10:30:00Z&to=2021-07-01T11:30:00Z",
+    };
+
+    [Theory]
+    [MemberData(nameof(SingleFilters))]
+    public async Task Export_EachFilterSelectsTheSameRowsAsTheList(string filter)
+    {
+        var correlationId = Unique("corr");
+        var start = new DateTime(2021, 7, 1, 10, 0, 0, DateTimeKind.Utc);
+        await SeedAsync(
+            AuditLog.Create(start, "ACTION_A", AuditActorType.User, actorId: "actor-a", appKey: "app-a", entityType: "Type-a", entityId: "id-a", correlationId: correlationId),
+            AuditLog.Create(start.AddHours(1), "ACTION_B", AuditActorType.System, actorId: "actor-b", appKey: "app-b", entityType: "Type-b", entityId: "id-b", correlationId: correlationId),
+            AuditLog.Create(start.AddHours(2), "ACTION_A", AuditActorType.User, actorId: "actor-b", appKey: "app-a", entityType: "Type-b", entityId: "id-a", correlationId: correlationId));
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = factory.CreateAdminClient();
+
+        var page = await client.GetFromJsonAsync<AuditLogPageResponse>(
+            $"/api/audit-logs?correlationId={correlationId}&{filter}",
+            TestContext.Current.CancellationToken);
+        var csv = ParseCsv(await GetCsvAsync(client, $"/api/audit-logs/export?format=csv&correlationId={correlationId}&{filter}"));
+        var json = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/audit-logs/export?format=json&correlationId={correlationId}&{filter}",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(page);
+        Assert.InRange(page.Items.Count, 1, 2);
+        var expected = page.Items.Select(item => item.Id.ToString()).Reverse().ToList();
+        Assert.Equal(expected, csv.Skip(1).Select(record => record[0]));
+        Assert.Equal(expected, json.EnumerateArray().Select(item => item.GetProperty("id").GetString()));
+    }
+
     [Fact]
     public async Task Export_AppliesTheSameFiltersAsTheList()
     {
