@@ -5,32 +5,71 @@ using Href.Core.Api.Common.Results;
 namespace Href.Core.Api.Modules.Audit;
 
 /// <summary>
-/// Validated audit log filters, combined with AND. Dates are inclusive UTC bounds; text filters match exactly after trimming.
+/// Validated audit log filters, combined with AND. Dates are inclusive UTC bounds (a date-only <c>to</c> covers that whole
+/// day); text filters match exactly after trimming. Only <see cref="Create"/> builds one, so every instance is validated.
 /// </summary>
-public sealed record AuditLogFilter(
-    DateTime? FromUtc,
-    DateTime? ToUtc,
-    string? AppKey,
-    AuditActorType? ActorType,
-    string? ActorId,
-    string? Action,
-    string? EntityType,
-    string? EntityId,
-    string? CorrelationId)
+public sealed class AuditLogFilter
 {
-    private static readonly string[] DateFormats =
+    private const string DateOnlyFormat = "yyyy-MM-dd";
+
+    private static readonly TimeSpan LastMicrosecondOfDay = TimeSpan.FromDays(1) - TimeSpan.FromMicroseconds(1);
+
+    private static readonly string[] DateTimeFormats =
     [
-        "yyyy-MM-dd",
         "yyyy-MM-dd'T'HH:mmK",
         "yyyy-MM-dd'T'HH:mm:ssK",
         "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK",
     ];
 
+    private AuditLogFilter(
+        DateTime? fromUtc,
+        DateTime? toUtc,
+        string? appKey,
+        AuditActorType? actorType,
+        string? actorId,
+        string? action,
+        string? entityType,
+        string? entityId,
+        string? correlationId)
+    {
+        FromUtc = fromUtc;
+        ToUtc = toUtc;
+        AppKey = appKey;
+        ActorType = actorType;
+        ActorId = actorId;
+        Action = action;
+        EntityType = entityType;
+        EntityId = entityId;
+        CorrelationId = correlationId;
+    }
+
+    public DateTime? FromUtc { get; }
+
+    /// <summary>
+    /// Inclusive upper bound. A date-only <c>to</c> becomes the last microsecond of that day (PostgreSQL stores microseconds).
+    /// </summary>
+    public DateTime? ToUtc { get; }
+
+    public string? AppKey { get; }
+
+    public AuditActorType? ActorType { get; }
+
+    public string? ActorId { get; }
+
+    public string? Action { get; }
+
+    public string? EntityType { get; }
+
+    public string? EntityId { get; }
+
+    public string? CorrelationId { get; }
+
     public static Result<AuditLogFilter> Create(AuditLogFilterRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!TryParseDate(request.From, out var fromUtc) || !TryParseDate(request.To, out var toUtc))
+        if (!TryParseDate(request.From, endOfDay: false, out var fromUtc)
+            || !TryParseDate(request.To, endOfDay: true, out var toUtc))
         {
             return AuditLogErrors.InvalidDate;
         }
@@ -110,7 +149,7 @@ public sealed record AuditLogFilter(
         return query;
     }
 
-    private static bool TryParseDate(string? value, out DateTime? utc)
+    private static bool TryParseDate(string? value, bool endOfDay, out DateTime? utc)
     {
         utc = null;
 
@@ -119,9 +158,18 @@ public sealed record AuditLogFilter(
             return true;
         }
 
+        var trimmed = value.Trim();
+
+        if (DateTime.TryParseExact(trimmed, DateOnlyFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        {
+            var startOfDay = DateTime.SpecifyKind(date, DateTimeKind.Utc);
+            utc = endOfDay ? startOfDay + LastMicrosecondOfDay : startOfDay;
+            return true;
+        }
+
         if (!DateTimeOffset.TryParseExact(
-                value.Trim(),
-                DateFormats,
+                trimmed,
+                DateTimeFormats,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal,
                 out var parsed))

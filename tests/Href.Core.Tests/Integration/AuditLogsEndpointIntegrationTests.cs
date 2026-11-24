@@ -177,12 +177,12 @@ public sealed class AuditLogsEndpointIntegrationTests(PostgresFixture postgres)
         var at13 = Row(day.AddHours(13), correlationId: correlationId);
         await SeedAsync(at10, at11, at12, at13);
 
-        var withZulu = await GetAdminPageAsync("/api/audit-logs?from=1990-05-01T11:00:00Z&to=1990-05-01T12:00:00Z");
-        var withOffset = await GetAdminPageAsync("/api/audit-logs?from=1990-05-01T14:00:00%2B03:00&to=1990-05-01T12:00:00.0000000Z");
-        var withoutOffset = await GetAdminPageAsync("/api/audit-logs?from=1990-05-01T11:00&to=1990-05-01T12:00:00");
+        var withZulu = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1990-05-01T11:00:00Z&to=1990-05-01T12:00:00Z");
+        var withOffset = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1990-05-01T14:00:00%2B03:00&to=1990-05-01T12:00:00.0000000Z");
+        var withoutOffset = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1990-05-01T11:00&to=1990-05-01T12:00:00");
         var onlyFrom = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1990-05-01T12:00:00Z");
         var onlyTo = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&to=1990-05-01T11:00:00Z");
-        var sameInstant = await GetAdminPageAsync("/api/audit-logs?from=1990-05-01T13:00:00Z&to=1990-05-01T13:00:00Z");
+        var sameInstant = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1990-05-01T13:00:00Z&to=1990-05-01T13:00:00Z");
 
         Assert.Equal([at12.Id, at11.Id], withZulu.Items.Select(item => item.Id));
         Assert.Equal([at12.Id, at11.Id], withOffset.Items.Select(item => item.Id));
@@ -190,6 +190,29 @@ public sealed class AuditLogsEndpointIntegrationTests(PostgresFixture postgres)
         Assert.Equal([at13.Id, at12.Id], onlyFrom.Items.Select(item => item.Id));
         Assert.Equal([at11.Id, at10.Id], onlyTo.Items.Select(item => item.Id));
         Assert.Equal(at13.Id, Assert.Single(sameInstant.Items).Id);
+    }
+
+    [Fact]
+    public async Task List_WithDateOnlyBounds_CoversWholeDays()
+    {
+        var correlationId = Unique("corr");
+        var day = new DateTime(1991, 3, 10, 0, 0, 0, DateTimeKind.Utc);
+        var dayBefore = Row(day.AddTicks(-10), correlationId: correlationId);
+        var midnight = Row(day, correlationId: correlationId);
+        var afternoon = Row(day.AddHours(15), correlationId: correlationId);
+        var lastMicrosecond = Row(day.AddDays(1).AddTicks(-10), correlationId: correlationId);
+        var nextDay = Row(day.AddDays(1), correlationId: correlationId);
+        await SeedAsync(dayBefore, midnight, afternoon, lastMicrosecond, nextDay);
+
+        var sameDay = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1991-03-10&to=1991-03-10");
+        var onlyTo = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&to=1991-03-10");
+        var onlyFrom = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1991-03-11");
+        var fromInstantToDay = await GetAdminPageAsync($"/api/audit-logs?correlationId={correlationId}&from=1991-03-10T15:00:00Z&to=1991-03-10");
+
+        Assert.Equal([lastMicrosecond.Id, afternoon.Id, midnight.Id], sameDay.Items.Select(item => item.Id));
+        Assert.Equal([lastMicrosecond.Id, afternoon.Id, midnight.Id, dayBefore.Id], onlyTo.Items.Select(item => item.Id));
+        Assert.Equal(nextDay.Id, Assert.Single(onlyFrom.Items).Id);
+        Assert.Equal([lastMicrosecond.Id, afternoon.Id], fromInstantToDay.Items.Select(item => item.Id));
     }
 
     [Fact]
@@ -309,8 +332,8 @@ public sealed class AuditLogsEndpointIntegrationTests(PostgresFixture postgres)
             "ix_audit_logs_app_key_occurred_at_utc_id"
         },
         {
-            "SELECT id FROM audit_logs WHERE actor_type = 'User' AND actor_id = 'user-1' ORDER BY occurred_at_utc DESC, id DESC LIMIT 50",
-            "ix_audit_logs_actor_occurred_at_utc_id"
+            "SELECT id FROM audit_logs WHERE actor_id = 'user-1' ORDER BY occurred_at_utc DESC, id DESC LIMIT 50",
+            "ix_audit_logs_actor_id_occurred_at_utc_id"
         },
         {
             "SELECT id FROM audit_logs WHERE correlation_id = 'corr-1' ORDER BY occurred_at_utc DESC, id DESC LIMIT 50",
@@ -330,7 +353,7 @@ public sealed class AuditLogsEndpointIntegrationTests(PostgresFixture postgres)
         await using var connection = new NpgsqlConnection(postgres.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using (var disable = new NpgsqlCommand("SET LOCAL enable_seqscan = off", connection, transaction))
+        await using (var disable = new NpgsqlCommand("ANALYZE audit_logs; SET LOCAL enable_seqscan = off", connection, transaction))
         {
             await disable.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -356,7 +379,7 @@ public sealed class AuditLogsEndpointIntegrationTests(PostgresFixture postgres)
         await using var connection = new NpgsqlConnection(postgres.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using (var disable = new NpgsqlCommand("SET LOCAL enable_seqscan = off; SET LOCAL enable_sort = off", connection, transaction))
+        await using (var disable = new NpgsqlCommand("ANALYZE audit_logs; SET LOCAL enable_seqscan = off; SET LOCAL enable_sort = off", connection, transaction))
         {
             await disable.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -365,7 +388,8 @@ public sealed class AuditLogsEndpointIntegrationTests(PostgresFixture postgres)
         {
             ("SELECT id FROM audit_logs ORDER BY occurred_at_utc DESC, id DESC LIMIT 50", "ix_audit_logs_occurred_at_utc_id"),
             ("SELECT id FROM audit_logs WHERE app_key = 'billing' ORDER BY occurred_at_utc DESC, id DESC LIMIT 50", "ix_audit_logs_app_key_occurred_at_utc_id"),
-            ("SELECT id FROM audit_logs WHERE actor_type = 'User' AND actor_id = 'user-1' ORDER BY occurred_at_utc DESC, id DESC LIMIT 50", "ix_audit_logs_actor_occurred_at_utc_id"),
+            ("SELECT id FROM audit_logs WHERE actor_id = 'user-1' ORDER BY occurred_at_utc DESC, id DESC LIMIT 50", "ix_audit_logs_actor_id_occurred_at_utc_id"),
+            ("SELECT id FROM audit_logs WHERE actor_type = 'User' AND actor_id = 'user-1' ORDER BY occurred_at_utc DESC, id DESC LIMIT 50", "ix_audit_logs_actor_id_occurred_at_utc_id"),
         })
         {
             await using var explain = new NpgsqlCommand($"EXPLAIN {sql}", connection, transaction);
