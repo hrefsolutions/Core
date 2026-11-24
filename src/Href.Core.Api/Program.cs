@@ -1,4 +1,5 @@
 using Href.Core.Api.Common.Logging;
+using Href.Core.Api.Common.OpenApi;
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Web;
 using Href.Core.Api.Modules.Applications;
@@ -31,6 +32,7 @@ try
         preserveStaticLogger: true);
 
     builder.Services.AddControllers();
+    builder.Services.AddCoreOpenApi();
     builder.Services.AddProblemDetails(options =>
         options.CustomizeProblemDetails = context =>
         {
@@ -108,6 +110,7 @@ try
     app.UseMiddleware<AppKeyLogContextMiddleware>();
     app.UseRateLimiter();
     app.MapControllers();
+    app.MapCoreOpenApi();
 
     app.Run();
     return 0;
