@@ -6,6 +6,7 @@ using Href.Core.Api.Modules.Audit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Time.Testing;
 using NHibernate.Exceptions;
+using Npgsql;
 
 namespace Href.Core.Tests.Integration;
 
@@ -139,6 +140,46 @@ public sealed class AuditLogIntegrationTests(PostgresFixture postgres)
             mutationSession.CreateSQLQuery("DELETE FROM audit_logs WHERE id = :id")
                 .SetParameter("id", saved.Id)
                 .ExecuteUpdateAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AuditLogsTable_RejectsTruncateViaDatabaseTrigger()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using (var session = postgres.SessionFactory.OpenSession())
+        {
+            var auditService = new AuditService(session, new StubHttpContextAccessor(null), TimeProvider.System);
+            using var transaction = session.BeginTransaction();
+            await auditService.RecordAsync(
+                new AuditEntry(AuditActions.ApplicationCreated, EntityType: "Application", EntityId: "truncate-check"),
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transactionScope = await connection.BeginTransactionAsync(cancellationToken);
+        PostgresException? rejection = null;
+
+        try
+        {
+            await using var truncate = new NpgsqlCommand("TRUNCATE audit_logs", connection, transactionScope);
+            await truncate.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (PostgresException exception)
+        {
+            rejection = exception;
+        }
+        finally
+        {
+            await transactionScope.RollbackAsync(cancellationToken);
+        }
+
+        Assert.NotNull(rejection);
+        Assert.Contains("append-only", rejection.MessageText, StringComparison.Ordinal);
+
+        await using var count = new NpgsqlCommand("SELECT count(*) FROM audit_logs WHERE entity_id = 'truncate-check'", connection);
+        Assert.True((long)(await count.ExecuteScalarAsync(cancellationToken))! >= 1);
     }
 
     [Fact]
