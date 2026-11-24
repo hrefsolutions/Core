@@ -4,6 +4,18 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Agregado
+
+- Consulta del registro de auditoría (#29): **`GET /api/audit-logs`**, solo para admin (`core.admin`).
+  - **Filtros** opcionales, combinados con AND; los valores vacíos se ignoran:
+    - `from` y `to`: inclusivos, en ISO 8601. Sin zona horaria se toman como UTC. Con solo la fecha (`yyyy-MM-dd`, día UTC), `from` empieza a las 00:00 y `to` cubre el día entero; un `+` del offset se manda como `%2B`. Si `from` es posterior a `to`, devuelve `400 AuditLogs.InvalidRange`, y una fecha ilegible `400 AuditLogs.InvalidDate`.
+    - `actorType`: solo los nombres exactos (`User`, `Application`, `System`, `Anonymous`). Números, combinaciones u otras mayúsculas devuelven `400 AuditLogs.InvalidActorType`.
+    - `appKey`, `actorId`, `action`, `entityType`, `entityId` y `correlationId`: coincidencia exacta. Un valor más largo que su columna o con caracteres de control devuelve `400 AuditLogs.InvalidFilter`.
+  - **Paginado:** `page` desde 1 y `pageSize` de 1 a 200 (50 por defecto), siempre ordenado por `occurredAtUtc DESC, id DESC`. Responde `{ items, page, pageSize, totalCount }` con `Cache-Control: no-store`.
+  - `oldValues` y `newValues` salen como objetos JSON, no como texto.
+  - **Limitación conocida:** cada consulta hace un `count(*)` exacto y las páginas profundas usan `OFFSET`; con una tabla que solo crece, un conteo estimado o paginado por keyset queda como mejora a futuro.
+  - **Migración `0010_audit_logs_query_indexes.sql`:** los índices por fecha y por `app_key` ahora incluyen `id`, y hay uno nuevo por `actor_id`. Así las consultas por fecha, aplicación y actor leen en el orden del índice, sin ordenar en memoria; tests con `EXPLAIN` sobre SQL equivalente lo verifican.
+
 ## 0.5.0 - 2026-11-23
 
 ### Agregado
