@@ -28,11 +28,7 @@ public sealed class LoginAttemptThrottleIntegrationTests(PostgresFixture postgre
         var app = await SaveApplicationAsync(cancellationToken);
         var email = UniqueEmail();
         var otherEmail = UniqueEmail();
-
-        if (existingUser)
-        {
-            await SaveUserAsync(app, email, cancellationToken);
-        }
+        Guid? userId = existingUser ? await SaveUserAsync(app, email, cancellationToken) : null;
 
         await using var factory = new ApiFactory(postgres.ConnectionString);
         var ip = 0;
@@ -55,9 +51,10 @@ public sealed class LoginAttemptThrottleIntegrationTests(PostgresFixture postgre
         Assert.Equal("no-store", throttled.Headers.CacheControl?.ToString());
         Assert.Equal(HttpStatusCode.Unauthorized, other.StatusCode);
 
-        var reasons = await ReadLoginFailedReasonsAsync(email, cancellationToken);
-        Assert.Equal(LoginAttemptThrottle.AttemptLimit + 1, reasons.Count);
-        Assert.Equal(nameof(LoginFailureReason.Throttled), reasons[^1]);
+        var rows = await ReadLoginFailedAsync(email, cancellationToken);
+        Assert.Equal(LoginAttemptThrottle.AttemptLimit + 1, rows.Count);
+        Assert.Equal(nameof(LoginFailureReason.Throttled), rows[^1].Reason);
+        Assert.Equal(userId?.ToString(), rows[^1].EntityId);
     }
 
     [Fact]
@@ -132,7 +129,7 @@ public sealed class LoginAttemptThrottleIntegrationTests(PostgresFixture postgre
         return new SeededApplication(application.Id, application.AppKey, secret);
     }
 
-    private async Task SaveUserAsync(SeededApplication app, string email, CancellationToken cancellationToken)
+    private async Task<Guid> SaveUserAsync(SeededApplication app, string email, CancellationToken cancellationToken)
     {
         var user = User.Create(email, "Ana", Password, new PasswordHasher<User>()).Value;
         user.MarkEmailVerified(DateTime.UtcNow);
@@ -141,27 +138,30 @@ public sealed class LoginAttemptThrottleIntegrationTests(PostgresFixture postgre
         await session.SaveAsync(user, cancellationToken);
         await session.SaveAsync(UserApplicationAccess.Grant(user.Id, app.Id, []).Value, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        return user.Id;
     }
 
-    private async Task<List<string>> ReadLoginFailedReasonsAsync(string email, CancellationToken cancellationToken)
+    private async Task<List<LoginFailedRow>> ReadLoginFailedAsync(string email, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(postgres.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
-            "SELECT new_values ->> 'reason' FROM audit_logs WHERE action = @action AND new_values ->> 'email' = @email ORDER BY occurred_at_utc",
+            "SELECT new_values ->> 'reason', entity_id FROM audit_logs WHERE action = @action AND new_values ->> 'email' = @email ORDER BY occurred_at_utc",
             connection);
         command.Parameters.AddWithValue("action", AuditActions.LoginFailed);
         command.Parameters.AddWithValue("email", email);
-        var reasons = new List<string>();
+        var rows = new List<LoginFailedRow>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            reasons.Add(reader.GetString(0));
+            rows.Add(new LoginFailedRow(reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1)));
         }
 
-        return reasons;
+        return rows;
     }
 
     private sealed record SeededApplication(Guid Id, string AppKey, string Secret);
+
+    private sealed record LoginFailedRow(string Reason, string? EntityId);
 }

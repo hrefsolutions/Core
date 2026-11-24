@@ -146,12 +146,13 @@ public sealed class AuditLogIntegrationTests(PostgresFixture postgres)
     public async Task AuditLogsTable_RejectsTruncateViaDatabaseTrigger()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
+        var entityId = $"truncate-{Guid.NewGuid():N}";
         using (var session = postgres.SessionFactory.OpenSession())
         {
             var auditService = new AuditService(session, new StubHttpContextAccessor(null), TimeProvider.System);
             using var transaction = session.BeginTransaction();
             await auditService.RecordAsync(
-                new AuditEntry(AuditActions.ApplicationCreated, EntityType: "Application", EntityId: "truncate-check"),
+                new AuditEntry(AuditActions.ApplicationCreated, EntityType: "Application", EntityId: entityId),
                 cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
@@ -178,8 +179,9 @@ public sealed class AuditLogIntegrationTests(PostgresFixture postgres)
         Assert.NotNull(rejection);
         Assert.Contains("append-only", rejection.MessageText, StringComparison.Ordinal);
 
-        await using var count = new NpgsqlCommand("SELECT count(*) FROM audit_logs WHERE entity_id = 'truncate-check'", connection);
-        Assert.True((long)(await count.ExecuteScalarAsync(cancellationToken))! >= 1);
+        await using var count = new NpgsqlCommand("SELECT count(*) FROM audit_logs WHERE entity_id = @entityId", connection);
+        count.Parameters.AddWithValue("entityId", entityId);
+        Assert.Equal(1L, (long)(await count.ExecuteScalarAsync(cancellationToken))!);
     }
 
     [Fact]

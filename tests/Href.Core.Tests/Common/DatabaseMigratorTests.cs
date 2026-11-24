@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Href.Core.Tests.Common;
@@ -80,6 +81,38 @@ public sealed class DatabaseMigratorTests
             .ToArray();
 
         Assert.Contains(resources, name => name.EndsWith(".Database.Migrations.0000_baseline.sql", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("href_core_app", true)]
+    [InlineData(null, false)]
+    public void MigrateIfEnabled_WhenDisabledWithARuntimeRole_WarnsThatNothingIsGranted(string? runtimeRole, bool expectWarning)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [DatabaseMigrator.MigrateOnStartupKey] = "false",
+                [DatabaseRuntimeRole.RoleKey] = runtimeRole,
+            })
+            .Build();
+        var logger = new RecordingLogger();
+
+        DatabaseMigrator.MigrateIfEnabled(configuration, new StubHostEnvironment(Environments.Production), logger);
+
+        Assert.Equal(expectWarning, logger.Levels.Contains(LogLevel.Warning));
+    }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<LogLevel> Levels { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Levels.Add(logLevel);
     }
 
     private sealed class StubHostEnvironment(string environmentName) : IHostEnvironment

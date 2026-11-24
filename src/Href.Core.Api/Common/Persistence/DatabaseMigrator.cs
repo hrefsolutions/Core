@@ -27,6 +27,14 @@ public static class DatabaseMigrator
         if (!ShouldMigrateOnStartup(configuration))
         {
             logger.LogInformation("Database migrations on startup are disabled ({ConfigKey}=false)", MigrateOnStartupKey);
+
+            if (!string.IsNullOrWhiteSpace(configuration[DatabaseRuntimeRole.RoleKey]))
+            {
+                logger.LogWarning(
+                    "{RoleKey} is set but migrations are disabled, so no privileges are granted to the runtime role on this startup",
+                    DatabaseRuntimeRole.RoleKey);
+            }
+
             return;
         }
 

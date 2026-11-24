@@ -41,8 +41,9 @@ public static partial class DatabaseRuntimeRole
 
     /// <summary>
     /// Grants the runtime privileges to <paramref name="roleName"/> over the owner connection, in one transaction.
-    /// Throws <see cref="InvalidOperationException"/> when the name is invalid, the role does not exist, is a superuser
-    /// or is the owner connection's own user.
+    /// Throws <see cref="InvalidOperationException"/> when the name is invalid, the role does not exist, is a superuser,
+    /// is the owner connection's own user, or owns <c>audit_logs</c> (directly or as a member of its owner role), since
+    /// such a role could disable the audit triggers.
     /// </summary>
     public static void GrantPrivileges(string ownerConnectionString, string roleName, ILogger logger)
     {
@@ -59,10 +60,11 @@ public static partial class DatabaseRuntimeRole
         connection.Open();
 
         using (var check = new NpgsqlCommand(
-            "SELECT r.rolsuper, r.rolname = current_user FROM pg_roles r WHERE r.rolname = @role",
+            "SELECT r.rolsuper, r.rolname = current_user, EXISTS (SELECT 1 FROM pg_tables t WHERE t.schemaname = 'public' AND t.tablename = @table AND pg_has_role(r.oid, t.tableowner, 'MEMBER')) FROM pg_roles r WHERE r.rolname = @role",
             connection))
         {
             check.Parameters.AddWithValue("role", roleName);
+            check.Parameters.AddWithValue("table", AuditLogsTable);
             using var reader = check.ExecuteReader();
 
             if (!reader.Read())
@@ -81,6 +83,12 @@ public static partial class DatabaseRuntimeRole
             {
                 throw new InvalidOperationException(
                     $"The database role '{roleName}' configured in {RoleKey} is the migration connection's own user; use a separate role.");
+            }
+
+            if (reader.GetBoolean(2))
+            {
+                throw new InvalidOperationException(
+                    $"The database role '{roleName}' configured in {RoleKey} owns {AuditLogsTable} or is a member of its owner role; use a role without ownership.");
             }
         }
 

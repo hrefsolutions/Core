@@ -3,9 +3,14 @@ using System.Net.Http.Json;
 using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Serilog.Core;
+using Serilog.Events;
 
 namespace Href.Core.Tests.Integration;
 
@@ -79,6 +84,46 @@ public sealed class DatabaseRuntimeRoleIntegrationTests(PostgresFixture postgres
         var ownRole = await CreateRoleAsync(cancellationToken);
         var ownError = Assert.Throws<InvalidOperationException>(() => DatabaseRuntimeRole.GrantPrivileges(RuntimeConnectionString(ownRole), ownRole, NullLogger.Instance));
         Assert.Contains("own user", ownError.Message, StringComparison.Ordinal);
+
+        var ownerMember = await CreateRoleAsync(cancellationToken);
+        var ownerName = new NpgsqlConnectionStringBuilder(postgres.ConnectionString).Username!;
+        await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await ExecuteAsync(connection, $"GRANT \"{ownerName}\" TO \"{ownerMember}\"", cancellationToken);
+        var ownerError = Assert.Throws<InvalidOperationException>(() => DatabaseRuntimeRole.GrantPrivileges(postgres.ConnectionString, ownerMember, NullLogger.Instance));
+        Assert.Contains("owns audit_logs", ownerError.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Startup_OutsideDevelopment_WarnsOnlyWhenTheApiConnectionIsPrivileged(bool useRuntimeRole, bool expectWarning)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var role = await CreateRoleAsync(cancellationToken);
+        var overrides = new Dictionary<string, string?>
+        {
+            [$"ConnectionStrings:{DatabaseRuntimeRole.MigrationsConnectionName}"] = postgres.ConnectionString,
+            [DatabaseRuntimeRole.RoleKey] = role,
+        };
+        var sink = new CapturingLogSink();
+        await using var baseFactory = new ApiFactory(
+            useRuntimeRole ? RuntimeConnectionString(role) : postgres.ConnectionString,
+            migrateOnStartup: true,
+            overrides: overrides,
+            environment: Environments.Production);
+        await using var factory = baseFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.AddSingleton<ILogEventSink>(sink)));
+
+        using var client = factory.CreateClient();
+        var health = await client.GetAsync("/health", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+        Assert.Contains(sink.Events, logEvent => logEvent.MessageTemplate.Text.StartsWith("Granted the runtime database privileges", StringComparison.Ordinal));
+        Assert.Equal(
+            expectWarning,
+            sink.Events.Any(logEvent => logEvent.Level == LogEventLevel.Warning
+                && logEvent.MessageTemplate.Text.StartsWith("The API connects to PostgreSQL as a superuser", StringComparison.Ordinal)));
     }
 
     [Fact]

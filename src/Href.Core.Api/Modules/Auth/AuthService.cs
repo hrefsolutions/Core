@@ -39,7 +39,8 @@ public sealed class AuthService(
     /// stored hash changed in between or needs an upgrade. Before any of it, a well-formed email takes one attempt slot of
     /// <see cref="LoginAttemptThrottle"/>; with no slot left the login returns <see cref="AuthErrors.LoginAttemptsExceeded"/>
     /// (<c>429</c>) without checking the password, for existing and unknown emails alike, and records <c>LOGIN_FAILED</c>
-    /// with reason <c>Throttled</c>. A correct password releases the account.
+    /// with reason <c>Throttled</c> (with the user id when the email exists, read by a scalar query for the audit only).
+    /// A correct password, confirmed again inside the transaction when needed, releases the account.
     /// </summary>
     public async Task<Result<TokenResponse>> LoginAsync(
         Guid applicationId,
@@ -78,7 +79,13 @@ public sealed class AuthService(
 
         if (loginAttemptThrottle.TryAcquire(email.Value) is { } retryAfter)
         {
-            return LoginAttempt.Failed(AuthErrors.LoginAttemptsExceeded(retryAfter), null, LoginFailureReason.Throttled);
+            var throttledUserIds = await session.Query<User>()
+                .Where(existing => existing.Email == email.Value)
+                .Select(existing => existing.Id)
+                .ToListAsync(cancellationToken);
+            Guid? throttledUserId = throttledUserIds.Count == 1 ? throttledUserIds[0] : null;
+
+            return LoginAttempt.Failed(AuthErrors.LoginAttemptsExceeded(retryAfter), throttledUserId, LoginFailureReason.Throttled);
         }
 
         var candidate = await session.Query<User>()
@@ -106,8 +113,6 @@ public sealed class AuthService(
             return LoginAttempt.Failed(AuthErrors.InvalidCredentials, candidate.Id, LoginFailureReason.InvalidPassword);
         }
 
-        loginAttemptThrottle.Reset(email.Value);
-
         using var transaction = session.BeginTransaction();
 
         await LockUserTokensAsync(candidate.Id, cancellationToken);
@@ -117,6 +122,8 @@ public sealed class AuthService(
         {
             return LoginAttempt.Failed(AuthErrors.InvalidCredentials, user.Id, LoginFailureReason.InvalidPassword);
         }
+
+        loginAttemptThrottle.Reset(email.Value);
 
         var accessResult = await CheckUserCanSignInAsync(user, applicationId, cancellationToken);
 

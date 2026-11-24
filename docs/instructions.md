@@ -99,7 +99,7 @@ The defaults come from the code or from `appsettings.json` and work on Railway. 
 | Variable | Default | Notes |
 |---|---|---|
 | `ConnectionStrings__Migrations` | `ConnectionStrings__DefaultConnection` | Connection of the schema owner, used only by the migrations and the grants at startup. Set it together with `Database__RuntimeRole` (see [Least-privilege database role](#least-privilege-database-role)). |
-| `Database__RuntimeRole` | none | Name of the role the API itself connects as (lowercase identifier). On every startup with migrations, the owner grants it read and write on the tables, only `SELECT` and `INSERT` on `audit_logs`, and nothing on `schemaversions`. The API does not start if the role does not exist, is a superuser or is the owner connection's own user. |
+| `Database__RuntimeRole` | none | Name of the role the API itself connects as (lowercase identifier). On every startup with migrations, the owner grants it read and write on the tables, only `SELECT` and `INSERT` on `audit_logs`, and nothing on `schemaversions`. The API does not start if the role does not exist, is a superuser, is the owner connection's own user or owns `audit_logs` (directly or through membership). |
 | `Database__MigrateOnStartup` | `true` | DbUp applies the pending SQL migrations (`Database/Migrations/*.sql`) on startup, each in its own transaction and once per database (journal table `schemaversions`). If a migration fails, the API does not start. `false` starts the API without migrating. |
 | `Smtp__Host` | `smtp.gmail.com` | Required, not blank. |
 | `Smtp__Port` | `465` | 1..65535. Gmail: `465` with `SslOnConnect`, or `587` with `StartTls`. |

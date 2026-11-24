@@ -76,6 +76,40 @@ public sealed class ApplicationAuditIntegrationTests(PostgresFixture postgres)
         Assert.NotEqual(Property(rows[3].OldValues, "clientSecretRotatedAtUtc"), Property(rows[3].NewValues, "clientSecretRotatedAtUtc"));
     }
 
+    [Fact]
+    public async Task ConcurrentUpdates_RecordAChainWhereEachBeforeIsThePreviousAfter()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        using var client = factory.CreateAdminClient();
+        var appKey = $"race-{Guid.NewGuid():N}"[..20];
+        var created = await client.PostAsJsonAsync("/api/apps", new CreateApplicationRequest(appKey, "Race 0", null, false), cancellationToken);
+        var createdBody = await created.Content.ReadFromJsonAsync<ApplicationCreatedResponse>(cancellationToken);
+        Assert.NotNull(createdBody);
+
+        var updates = await Task.WhenAll(Enumerable.Range(1, 8).Select(index =>
+            client.PutAsJsonAsync($"/api/apps/{appKey}", new UpdateApplicationRequest($"Race {index}", null, false), cancellationToken)));
+
+        Assert.All(updates, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        using var session = postgres.SessionFactory.OpenSession();
+        var rows = await session.Query<AuditLog>()
+            .Where(row => row.EntityId == createdBody.Id.ToString() && row.Action == AuditActions.ApplicationUpdated)
+            .OrderBy(row => row.OccurredAtUtc)
+            .ToListAsync(cancellationToken);
+
+        Assert.Equal(8, rows.Count);
+        var previous = "Race 0";
+
+        foreach (var row in rows)
+        {
+            Assert.Equal(previous, Property(row.OldValues, "name"));
+            previous = Property(row.NewValues, "name")!;
+        }
+
+        var persisted = await session.Query<Application>().SingleAsync(application => application.AppKey == appKey, cancellationToken);
+        Assert.Equal(previous, persisted.Name);
+    }
+
     private static async Task<HttpResponseMessage> SendAsync(
         HttpClient client,
         string correlationId,
