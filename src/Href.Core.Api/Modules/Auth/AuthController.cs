@@ -125,6 +125,26 @@ public sealed class AuthController(AuthService authService, AccountService accou
     }
 
     /// <summary>
+    /// Accepts an invitation with the token from the invitation link: sets the chosen password and verifies the email.
+    /// </summary>
+    /// <response code="204">The token was consumed, the password set and the email verified; the user can log in.</response>
+    /// <response code="400">`Users.WeakPassword` (checked before the token, so the link can be used again) or `Auth.InvalidOneTimeToken`: the token is missing, unknown, used, expired, revoked, of another application or not an invitation token, or the user is locked or lost the access.</response>
+    [HttpPost("accept-invitation")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInvitationRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetApplication(out var applicationId, out var appKey))
+        {
+            return AppKeyAuthentication.InvalidCredentialsError.ToProblem(this);
+        }
+
+        var result = await accountService.AcceptInvitationAsync(applicationId, appKey, request, GetCorrelationId(), cancellationToken);
+
+        return result.IsFailure ? result.ToProblem(this) : NoContent();
+    }
+
+    /// <summary>
     /// Logs a user in for the calling application (taken from the M2M credentials) and returns an access token and a refresh token.
     /// </summary>
     /// <response code="200">`{ accessToken, tokenType, expiresIn, refreshToken, refreshTokenExpiresAtUtc }` with `Cache-Control: no-store`.</response>

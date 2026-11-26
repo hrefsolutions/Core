@@ -7,6 +7,23 @@ public sealed record UpdateUserRequest(string? Email, string? FullName);
 public sealed record LockUserRequest(string? Reason);
 
 /// <summary>
+/// Invites a user to one application. <c>RoleIds</c> omitted (<c>null</c>) gives the application's default role (none if
+/// there is no default); an empty list gives no role. <c>AcceptInvitationUrl</c> is the page of that application that
+/// calls <c>POST /api/auth/accept-invitation</c>; the email links to it with <c>token=...</c> appended.
+/// </summary>
+public sealed record InviteUserRequest(
+    string? Email,
+    string? FullName,
+    string? AppKey,
+    IReadOnlyList<Guid>? RoleIds,
+    string? AcceptInvitationUrl);
+
+/// <summary>
+/// Sends a new invitation link for an application the invited user already has access to.
+/// </summary>
+public sealed record ResendInvitationRequest(string? AppKey, string? AcceptInvitationUrl);
+
+/// <summary>
 /// Filters and paging of the user list. <c>Search</c> matches part of the email or the full name, ignoring case.
 /// </summary>
 public sealed record ListUsersQuery(string? Search, string? Status, int Page, int PageSize);

@@ -457,6 +457,125 @@ public sealed class AccountService(
         return Result.Success();
     }
 
+    /// <summary>
+    /// Accepts an invitation with a token of the calling application, for an active user that still has access to it: sets
+    /// the chosen password (which regenerates the security stamp), verifies the email if it was not verified yet, consumes the
+    /// token, revokes the user's other open one-time tokens and every active session, records <c>USER_INVITATION_ACCEPTED</c>
+    /// (plus <c>SESSIONS_REVOKED</c> when a session was revoked) and queues <c>welcome-user</c> when the email was verified now.
+    /// A weak password is rejected before the token is touched, so the link can be used again. Lock order, the same as
+    /// <see cref="ResetPasswordAsync"/>: the per-user refresh token advisory lock, then the user row, then the token row.
+    /// </summary>
+    public async Task<Result> AcceptInvitationAsync(
+        Guid applicationId,
+        string appKey,
+        AcceptInvitationRequest request,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var tokenHash = UserToken.HashToken(request.Token);
+
+        if (tokenHash is null)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        var policy = PasswordPolicy.Validate(request.Password);
+
+        if (policy.IsFailure)
+        {
+            return policy.Error;
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        var target = await session.Query<UserToken>()
+            .Where(candidate => candidate.TokenHash == tokenHash
+                && candidate.ApplicationId == applicationId
+                && candidate.Purpose == UserTokenPurpose.Invitation)
+            .Select(candidate => new { candidate.Id, candidate.UserId })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (target is null)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        await RefreshTokenWrites.LockUserAsync(session, target.UserId, cancellationToken);
+        var user = await session.GetAsync<User>(target.UserId, NHibernate.LockMode.Upgrade, cancellationToken);
+        var token = await session.GetAsync<UserToken>(target.Id, NHibernate.LockMode.Upgrade, cancellationToken);
+
+        var hasAccess = await session.Query<UserApplicationAccess>()
+            .AnyAsync(access => access.UserId == user.Id && access.ApplicationId == applicationId, cancellationToken);
+
+        if (user.Status != UserStatus.Active || !hasAccess)
+        {
+            return AuthErrors.InvalidOneTimeToken;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var consumed = token.Consume(now);
+
+        if (consumed.IsFailure)
+        {
+            return consumed.Error;
+        }
+
+        var before = UserAuditSnapshot.From(user);
+        var changed = user.SetPassword(request.Password, passwordHasher);
+
+        if (changed.IsFailure)
+        {
+            return changed.Error;
+        }
+
+        var verifiedNow = user.EmailVerifiedAtUtc is null;
+
+        if (verifiedNow)
+        {
+            user.MarkEmailVerified(now);
+        }
+
+        await UserTokenWrites.RevokeOpenAsync(session, user.Id, purpose: null, token.Id, now, cancellationToken);
+        var revokedSessions = await RefreshTokenWrites.RevokeActiveSessionsAsync(
+            session,
+            user.Id,
+            applicationId: null,
+            now,
+            RefreshTokenRevocationReason.PasswordReset,
+            cancellationToken);
+
+        await auditService.RecordUserChangeAsync(AuditActions.UserInvitationAccepted, before, UserAuditSnapshot.From(user), cancellationToken);
+
+        if (revokedSessions > 0)
+        {
+            await auditService.RecordSessionsRevokedAsync(user.Id, null, RefreshTokenRevocationReason.PasswordReset, revokedSessions, cancellationToken);
+        }
+
+        if (verifiedNow)
+        {
+            var application = await session.GetAsync<Application>(applicationId, cancellationToken);
+            var welcome = await notificationService.QueueTemplateAsync(
+                appKey,
+                new EmailRecipientRequest(user.Email, user.FullName),
+                WelcomeUserTemplateKey,
+                new Dictionary<string, string> { ["UserName"] = user.FullName, ["AppName"] = application.Name },
+                notifyOnFailureTo: null,
+                correlationId,
+                cancellationToken);
+
+            if (welcome.IsFailure)
+            {
+                return welcome.Error;
+            }
+        }
+
+        await session.FlushAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Result.Success();
+    }
+
     private Task<Result<Notification>> QueueVerificationEmailAsync(
         string appKey,
         Application application,
