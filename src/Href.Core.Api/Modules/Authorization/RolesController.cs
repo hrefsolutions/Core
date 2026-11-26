@@ -99,7 +99,7 @@ public sealed class RolesController(RoleAdminService roleService) : ControllerBa
     /// <response code="200">The role with its new permissions.</response>
     /// <response code="400">`Authorization.InvalidPermissionKeys` or `Authorization.UnknownPermissions` (listed); a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
     /// <response code="404">`Applications.NotFound` or `Authorization.RoleNotFound`.</response>
-    /// <response code="409">`Authorization.Reserved`: the admin role of the `core` application must keep `core.admin`.</response>
+    /// <response code="409">`Authorization.Reserved`: the admin role of the `core` application must keep `core.admin`; `Authorization.LastAdmin` when removing `core.admin` from another `core` role would leave Core without an active admin.</response>
     [HttpPut("{roleId:guid}/permissions")]
     [ProducesResponseType<RoleResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -123,7 +123,7 @@ public sealed class RolesController(RoleAdminService roleService) : ControllerBa
     /// </summary>
     /// <response code="204">The role was deleted.</response>
     /// <response code="404">`Applications.NotFound` or `Authorization.RoleNotFound`.</response>
-    /// <response code="409">`Authorization.Reserved`: the admin role of the `core` application cannot be deleted.</response>
+    /// <response code="409">`Authorization.Reserved`: the admin role of the `core` application cannot be deleted; `Authorization.LastAdmin` when deleting another `core` role would leave Core without an active admin.</response>
     [HttpDelete("{roleId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]

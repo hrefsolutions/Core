@@ -79,7 +79,7 @@ public sealed class UsersController(UserService userService) : ControllerBase
     /// <response code="200">The updated user.</response>
     /// <response code="400">`Users.InvalidEmail` or `Users.InvalidFullName` (nothing changes); a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
     /// <response code="404">`Users.NotFound`.</response>
-    /// <response code="409">`Users.EmailTaken`.</response>
+    /// <response code="409">`Users.EmailTaken`, or `Authorization.LastAdmin` when a new email (which clears the verification) would leave Core without an active admin.</response>
     [HttpPut("{id:guid}")]
     [ProducesResponseType<UserResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -100,7 +100,7 @@ public sealed class UsersController(UserService userService) : ControllerBase
     /// <response code="200">The locked user.</response>
     /// <response code="400">`Users.InvalidLockReason`.</response>
     /// <response code="404">`Users.NotFound`.</response>
-    /// <response code="409">`Users.AlreadyLocked`.</response>
+    /// <response code="409">`Users.AlreadyLocked`, or `Authorization.LastAdmin` when the user is the last active admin of Core.</response>
     [HttpPost("{id:guid}/lock")]
     [ProducesResponseType<UserResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

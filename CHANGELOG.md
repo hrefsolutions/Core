@@ -4,6 +4,13 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Corregido
+
+- Core se podía quedar sin ningún admin: nada impedía bloquear al último admin, cambiarle el email (queda sin verificar y no puede entrar), quitarle el acceso a `core`, vaciarle los roles en `core`, o borrar o sacarle `core.admin` a otro rol de `core` que era el único que se lo daba. La única salida era volver a cargar las variables `Bootstrap__*` y redeployar.
+  - **Ahora:** esas escrituras responden `409 Authorization.LastAdmin` y no cambian nada (tampoco graban auditoría) si dejarían a Core sin un usuario activo, con email verificado y con `core.admin`. Afecta `POST /api/users/{id}/lock`, `PUT /api/users/{id}` (solo cuando cambia el email), `PUT` y `DELETE /api/apps/core/users/{userId}...`, y `PUT .../permissions` y `DELETE` de `/api/apps/core/roles/{roleId}`. Las demás aplicaciones no cambian.
+  - **Concurrencia:** las escrituras protegidas toman un advisory lock de la transacción antes que cualquier otro lock, así que dos requests simultáneos no pueden bloquear cada uno a un admin distinto y dejar cero.
+  - **Base sin admins:** si no había ningún admin antes del cambio (por ejemplo, antes del bootstrap), no se bloquea nada.
+
 ## 0.6.1 - 2026-11-24
 
 Cierra los hallazgos de la auditoría E2E de v0.6.0 (#115, #116, #117, #118, #119).
