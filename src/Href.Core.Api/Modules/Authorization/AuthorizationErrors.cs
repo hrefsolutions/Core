@@ -8,6 +8,10 @@ public static class AuthorizationErrors
         "Authorization.Reserved",
         "The core.admin permission and the admin role of the core application cannot be deleted, and the admin role must keep core.admin.");
 
+    public static readonly Error LastAdmin = Error.Conflict(
+        "Authorization.LastAdmin",
+        "The change would leave Core without an active user with a verified email that holds core.admin.");
+
     public static readonly Error InvalidPermissionKey = Error.Validation(
         "Authorization.InvalidPermissionKey",
         "The permission key must be lowercase letters and digits separated by '.', '_', ':' or '-' (up to 100 characters).");

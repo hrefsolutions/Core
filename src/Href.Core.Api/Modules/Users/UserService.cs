@@ -174,6 +174,7 @@ public sealed class UserService(
 
         using var transaction = session.BeginTransaction();
 
+        var hadActiveAdmin = await CoreAdminGuard.BeginAsync(session, cancellationToken);
         var user = await session.GetAsync<User>(id, LockMode.Upgrade, cancellationToken);
 
         if (user is null)
@@ -224,6 +225,12 @@ public sealed class UserService(
             }
 
             await session.FlushAsync(cancellationToken);
+
+            if (await CoreAdminGuard.WouldLeaveNoAdminAsync(session, hadActiveAdmin, cancellationToken))
+            {
+                return AuthorizationErrors.LastAdmin;
+            }
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch (Exception exception) when (PostgresErrors.IsUniqueViolation(exception, User.EmailUniqueIndexName))
@@ -286,8 +293,11 @@ public sealed class UserService(
     {
         using var transaction = session.BeginTransaction();
 
+        var hadActiveAdmin = false;
+
         if (revokeSessions)
         {
+            hadActiveAdmin = await CoreAdminGuard.BeginAsync(session, cancellationToken);
             await RefreshTokenWrites.LockUserAsync(session, id, cancellationToken);
         }
 
@@ -330,6 +340,12 @@ public sealed class UserService(
         }
 
         await session.FlushAsync(cancellationToken);
+
+        if (await CoreAdminGuard.WouldLeaveNoAdminAsync(session, hadActiveAdmin, cancellationToken))
+        {
+            return AuthorizationErrors.LastAdmin;
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         return UserResponse.From(user);
