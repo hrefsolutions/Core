@@ -42,7 +42,7 @@ public sealed class ApplicationUsersController(ApplicationAccessService accessSe
     /// <response code="200">The user with its roles in the application.</response>
     /// <response code="400">`Authorization.InvalidRoleIds` or `Authorization.UnknownRoles` (unknown ids or roles of another application, listed); a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
     /// <response code="404">`Applications.NotFound` or `Users.NotFound`.</response>
-    /// <response code="409">`Authorization.AccessAlreadyGranted` when a concurrent request granted the access first.</response>
+    /// <response code="409">`Authorization.AccessAlreadyGranted` when a concurrent request granted the access first, or `Authorization.LastAdmin` when the new `core` roles would leave Core without an active admin.</response>
     [HttpPut("{userId:guid}/roles")]
     [ProducesResponseType<ApplicationUserResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -66,9 +66,11 @@ public sealed class ApplicationUsersController(ApplicationAccessService accessSe
     /// </summary>
     /// <response code="204">The access was revoked.</response>
     /// <response code="404">`Applications.NotFound` or `Authorization.AccessNotFound`.</response>
+    /// <response code="409">`Authorization.LastAdmin` when revoking this `core` access would leave Core without an active admin.</response>
     [HttpDelete("{userId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Revoke(string appKey, Guid userId, CancellationToken cancellationToken)
     {
         var result = await accessService.RevokeAsync(appKey, userId, cancellationToken);

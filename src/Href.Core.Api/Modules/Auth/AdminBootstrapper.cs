@@ -102,20 +102,7 @@ public sealed partial class AdminBootstrapper(
         AdminBootstrapOptions bootstrap,
         CancellationToken cancellationToken)
     {
-        var adminUserIds = await session.Query<UserApplicationAccess>()
-            .Where(access => access.ApplicationId == CoreApplication.Id
-                && access.Roles.Any(role => role.Permissions.Any(permission => permission.Id == CoreApplication.AdminPermissionId)))
-            .Select(access => access.UserId)
-            .ToListAsync(cancellationToken);
-        var hasActiveAdmin = adminUserIds.Count > 0
-            && await session.Query<User>()
-                .AnyAsync(
-                    user => adminUserIds.Contains(user.Id)
-                        && user.Status == UserStatus.Active
-                        && user.EmailVerifiedAtUtc != null,
-                    cancellationToken);
-
-        if (hasActiveAdmin)
+        if (await CoreAdminGuard.HasActiveAdminAsync(session, cancellationToken))
         {
             LogAdminAlreadyExists(logger);
             return;

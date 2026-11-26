@@ -201,6 +201,7 @@ public sealed class RoleAdminService(ISession session, IAuditService auditServic
 
         using var transaction = session.BeginTransaction();
 
+        var hadActiveAdmin = await CoreAdminGuard.BeginForApplicationAsync(session, appKey, cancellationToken);
         var application = await AuthorizationAdminQueries.FindApplicationAsync(session, appKey, lockForUpdate: true, cancellationToken);
 
         if (application is null)
@@ -250,6 +251,12 @@ public sealed class RoleAdminService(ISession session, IAuditService auditServic
 
         await auditService.RecordRoleChangeAsync(AuditActions.RolePermissionsChanged, application.AppKey, before, after, cancellationToken);
         await session.FlushAsync(cancellationToken);
+
+        if (await CoreAdminGuard.WouldLeaveNoAdminAsync(session, hadActiveAdmin, cancellationToken))
+        {
+            return AuthorizationErrors.LastAdmin;
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         return RoleResponse.From(role);
@@ -263,6 +270,7 @@ public sealed class RoleAdminService(ISession session, IAuditService auditServic
     {
         using var transaction = session.BeginTransaction();
 
+        var hadActiveAdmin = await CoreAdminGuard.BeginForApplicationAsync(session, appKey, cancellationToken);
         var application = await AuthorizationAdminQueries.FindApplicationAsync(session, appKey, lockForUpdate: true, cancellationToken);
 
         if (application is null)
@@ -302,6 +310,12 @@ public sealed class RoleAdminService(ISession session, IAuditService auditServic
         await session.DeleteAsync(role, cancellationToken);
         await auditService.RecordRoleChangeAsync(AuditActions.RoleDeleted, application.AppKey, before, null, cancellationToken);
         await session.FlushAsync(cancellationToken);
+
+        if (await CoreAdminGuard.WouldLeaveNoAdminAsync(session, hadActiveAdmin, cancellationToken))
+        {
+            return AuthorizationErrors.LastAdmin;
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         return Result.Success();

@@ -2,6 +2,7 @@ using Href.Core.Api.Common.Persistence;
 using Href.Core.Api.Common.Results;
 using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
+using Href.Core.Api.Modules.Auth;
 using Href.Core.Api.Modules.Users;
 using NHibernate.Linq;
 using ISession = NHibernate.ISession;
@@ -91,6 +92,7 @@ public sealed class ApplicationAccessService(ISession session, IAuditService aud
 
         using var transaction = session.BeginTransaction();
 
+        var hadActiveAdmin = await CoreAdminGuard.BeginForApplicationAsync(session, appKey, cancellationToken);
         var application = await AuthorizationAdminQueries.FindApplicationAsync(session, appKey, lockForUpdate: true, cancellationToken);
 
         if (application is null)
@@ -140,6 +142,12 @@ public sealed class ApplicationAccessService(ISession session, IAuditService aud
             }
 
             await session.FlushAsync(cancellationToken);
+
+            if (await CoreAdminGuard.WouldLeaveNoAdminAsync(session, hadActiveAdmin, cancellationToken))
+            {
+                return AuthorizationErrors.LastAdmin;
+            }
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch (Exception exception) when (PostgresErrors.IsUniqueViolation(exception, UserApplicationAccess.UserApplicationUniqueIndexName))
@@ -150,10 +158,14 @@ public sealed class ApplicationAccessService(ISession session, IAuditService aud
         return ToResponse(user, access);
     }
 
+    /// <summary>
+    /// Revokes the access (the row is deleted), recorded as <c>ACCESS_REVOKED</c>.
+    /// </summary>
     public async Task<Result> RevokeAsync(string appKey, Guid userId, CancellationToken cancellationToken)
     {
         using var transaction = session.BeginTransaction();
 
+        var hadActiveAdmin = await CoreAdminGuard.BeginForApplicationAsync(session, appKey, cancellationToken);
         var application = await AuthorizationAdminQueries.FindApplicationAsync(session, appKey, lockForUpdate: true, cancellationToken);
 
         if (application is null)
@@ -172,11 +184,16 @@ public sealed class ApplicationAccessService(ISession session, IAuditService aud
         await session.DeleteAsync(access, cancellationToken);
         await auditService.RecordAccessChangeAsync(AuditActions.AccessRevoked, application.AppKey, before, null, cancellationToken);
         await session.FlushAsync(cancellationToken);
+
+        if (await CoreAdminGuard.WouldLeaveNoAdminAsync(session, hadActiveAdmin, cancellationToken))
+        {
+            return AuthorizationErrors.LastAdmin;
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         return Result.Success();
     }
-
     private static ApplicationUserResponse ToResponse(User user, UserApplicationAccess access) =>
         new(
             user.Id,
