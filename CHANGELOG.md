@@ -4,6 +4,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.7.0 - 2026-11-26
+
+Agrega la invitación de usuarios por mail (#126).
+
 ### Agregado
 
 - Invitación de usuarios por mail. Hasta ahora un admin solo podía crear usuarios eligiéndoles la contraseña, que había que pasarles por otro canal y que nadie obligaba a cambiar.
