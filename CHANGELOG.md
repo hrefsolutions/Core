@@ -4,6 +4,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.6.2 - 2026-11-25
+
+Cierra el hallazgo importante de la prueba E2E del backoffice contra producción (#123).
+
 ### Corregido
 
 - Core se podía quedar sin ningún admin: nada impedía bloquear al último admin, cambiarle el email (queda sin verificar y no puede entrar), quitarle el acceso a `core`, vaciarle los roles en `core`, o borrar o sacarle `core.admin` a otro rol de `core` que era el único que se lo daba. La única salida era volver a cargar las variables `Bootstrap__*` y redeployar.
