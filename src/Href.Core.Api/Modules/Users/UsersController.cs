@@ -13,8 +13,49 @@ namespace Href.Core.Api.Modules.Users;
 [ApiController]
 [Route("api/users")]
 [Authorize(Policy = AdminAuthentication.PolicyName)]
-public sealed class UsersController(UserService userService) : ControllerBase
+public sealed class UsersController(UserService userService, InvitationService invitationService) : ControllerBase
 {
+    /// <summary>
+    /// Invites a user to an application: creates it unverified and without a known password, grants the access and emails a
+    /// one-time link (72 h) to <c>acceptInvitationUrl</c>, where the user picks the password.
+    /// </summary>
+    /// <response code="201">The invited user (email not verified); `Location` points to `GET /api/users/{id}`.</response>
+    /// <response code="400">`Auth.InvalidCallbackUrl`, `Users.InvalidEmail`, `Users.InvalidFullName`, `Authorization.InvalidRoleIds` or `Authorization.UnknownRoles`; a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
+    /// <response code="404">`Applications.NotFound`.</response>
+    /// <response code="409">`Users.EmailTaken` (any case).</response>
+    [HttpPost("invitations")]
+    [ProducesResponseType<UserResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> Invite([FromBody] InviteUserRequest request, CancellationToken cancellationToken)
+    {
+        var result = await invitationService.InviteAsync(request, GetCorrelationId(), cancellationToken);
+
+        return result.IsFailure
+            ? result.ToProblem(this)
+            : CreatedAtAction(nameof(GetById), new { id = result.Value.Id }, result.Value);
+    }
+
+    /// <summary>
+    /// Emails a new invitation link for an application the user already has access to; the previous links stop working.
+    /// </summary>
+    /// <response code="202">The new link was queued.</response>
+    /// <response code="400">`Auth.InvalidCallbackUrl`; a missing or malformed body returns the framework `ValidationProblemDetails`.</response>
+    /// <response code="404">`Applications.NotFound`, `Users.NotFound` or `Authorization.AccessNotFound`.</response>
+    /// <response code="409">`Users.EmailAlreadyVerified` (the user already activated the account) or `Users.AlreadyLocked`.</response>
+    [HttpPost("{id:guid}/invitations")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> ResendInvitation(Guid id, [FromBody] ResendInvitationRequest request, CancellationToken cancellationToken)
+    {
+        var result = await invitationService.ResendAsync(id, request, GetCorrelationId(), cancellationToken);
+
+        return result.IsFailure ? result.ToProblem(this) : Accepted();
+    }
+
     /// <summary>
     /// Creates a global user with the email already verified.
     /// </summary>
@@ -136,4 +177,6 @@ public sealed class UsersController(UserService userService) : ControllerBase
             ? result.ToProblem(this)
             : Ok(result.Value);
     }
+
+    private string? GetCorrelationId() => HttpContext.Items[CorrelationIdMiddleware.HeaderName] as string;
 }

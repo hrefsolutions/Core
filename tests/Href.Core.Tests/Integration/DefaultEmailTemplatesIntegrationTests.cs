@@ -14,6 +14,7 @@ public sealed class DefaultEmailTemplatesIntegrationTests(PostgresFixture postgr
         ["welcome-user"] = ["UserName", "AppName"],
         ["verify-email"] = ["UserName", "AppName", "VerificationUrl", "ExpiresInHours"],
         ["reset-password"] = ["UserName", "AppName", "ResetUrl", "ExpiresInMinutes"],
+        ["user-invitation"] = ["UserName", "AppName", "InvitationUrl", "ExpiresInHours"],
         ["delivery-failed-alert"] = ["OriginalTo", "OriginalSubject", "NotificationId", "Attempts", "LastError"],
     };
 
@@ -25,6 +26,7 @@ public sealed class DefaultEmailTemplatesIntegrationTests(PostgresFixture postgr
         ["ExpiresInHours"] = "24",
         ["ResetUrl"] = "https://example.com/reset?token=abc&user=1&x=\"y\"",
         ["ExpiresInMinutes"] = "30",
+        ["InvitationUrl"] = "https://example.com/invite?token=abc&user=1&x=\"y\"",
         ["OriginalTo"] = "dest@example.com",
         ["OriginalSubject"] = "Oferta \"única\" & <especial>",
         ["NotificationId"] = "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
@@ -60,7 +62,7 @@ public sealed class DefaultEmailTemplatesIntegrationTests(PostgresFixture postgr
     }
 
     [Fact]
-    public async Task SystemTemplates_IncludeTheFourDefaultKeysExactlyOnce()
+    public async Task SystemTemplates_IncludeTheDefaultKeysExactlyOnce()
     {
         using var session = postgres.SessionFactory.OpenSession();
         var defaultKeys = DocumentedVariables.Keys.ToList();
@@ -147,6 +149,9 @@ public sealed class DefaultEmailTemplatesIntegrationTests(PostgresFixture postgr
 
         var reset = renderer.Render(await LoadAsync("reset-password"), VariablesFor("reset-password")).Value;
         Assert.Contains("href=\"https://example.com/reset?token=abc&amp;user=1&amp;x=&quot;y&quot;\"", reset.HtmlBody);
+
+        var invitation = renderer.Render(await LoadAsync("user-invitation"), VariablesFor("user-invitation")).Value;
+        Assert.Contains("href=\"https://example.com/invite?token=abc&amp;user=1&amp;x=&quot;y&quot;\"", invitation.HtmlBody);
 
         var welcome = renderer.Render(await LoadAsync("welcome-user"), VariablesFor("welcome-user")).Value;
         Assert.Equal("Te damos la bienvenida a Mi App & <i>Co</i>", welcome.Subject);

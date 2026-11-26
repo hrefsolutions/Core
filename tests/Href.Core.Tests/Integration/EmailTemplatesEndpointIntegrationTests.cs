@@ -16,7 +16,7 @@ namespace Href.Core.Tests.Integration;
 public sealed partial class EmailTemplatesEndpointIntegrationTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string BaseUrl = "/api/notifications/templates";
-    private const string SeedResourceSuffix = "0004_seed_default_email_templates.sql";
+    private static readonly string[] SeedResourceSuffixes = ["0004_seed_default_email_templates.sql", "0012_add_user_invitations.sql"];
 
     private ApiFactory _factory = null!;
     private HttpClient _client = null!;
@@ -135,13 +135,17 @@ public sealed partial class EmailTemplatesEndpointIntegrationTests(PostgresFixtu
         return JsonDocument.Parse(json).RootElement.Clone();
     }
 
-    private static string ReadSeedScript()
+    private static string ReadSeedScripts()
     {
         var assembly = typeof(EmailTemplate).Assembly;
-        var resourceName = assembly.GetManifestResourceNames().Single(name => name.EndsWith(SeedResourceSuffix, StringComparison.Ordinal));
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
+        var scripts = SeedResourceSuffixes.Select(suffix =>
+        {
+            var resourceName = assembly.GetManifestResourceNames().Single(name => name.EndsWith(suffix, StringComparison.Ordinal));
+            using var stream = assembly.GetManifestResourceStream(resourceName)!;
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        });
+        return string.Join(Environment.NewLine, scripts);
     }
 
     [GeneratedRegex(@"gen_random_uuid\(\),\s*'([a-z0-9-]+)'")]
@@ -769,8 +773,8 @@ public sealed partial class EmailTemplatesEndpointIntegrationTests(PostgresFixtu
     [Fact]
     public async Task SystemTemplateRequirements_MatchTheSeededSystemTemplatesExactly()
     {
-        var seededKeys = SeededKeyRegex().Matches(ReadSeedScript()).Select(match => match.Groups[1].Value).ToList();
-        Assert.Equal(4, seededKeys.Count);
+        var seededKeys = SeededKeyRegex().Matches(ReadSeedScripts()).Select(match => match.Groups[1].Value).ToList();
+        Assert.Equal(5, seededKeys.Count);
         Assert.Equal(seededKeys.Order(StringComparer.Ordinal), SystemTemplateRequirements.Keys.Order(StringComparer.Ordinal));
 
         var databaseKeys = await QueryStringsAsync("SELECT key FROM email_templates WHERE is_system AND key NOT LIKE 'tpl-%'");

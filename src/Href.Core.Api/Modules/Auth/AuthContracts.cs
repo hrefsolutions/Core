@@ -16,6 +16,8 @@ public sealed record ForgotPasswordRequest(string? Email, string? ResetPasswordU
 
 public sealed record ResetPasswordRequest(string? Token, string? NewPassword);
 
+public sealed record AcceptInvitationRequest(string? Token, string? Password);
+
 public sealed record TokenResponse(
     string AccessToken,
     string TokenType,

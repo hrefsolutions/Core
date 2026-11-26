@@ -4,6 +4,15 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+### Agregado
+
+- Invitación de usuarios por mail. Hasta ahora un admin solo podía crear usuarios eligiéndoles la contraseña, que había que pasarles por otro canal y que nadie obligaba a cambiar.
+  - **`POST /api/users/invitations`** (admin): crea el usuario sin verificar y con una contraseña aleatoria que nadie conoce (no puede iniciar sesión hasta aceptar), le da acceso a la aplicación elegida (con su rol predeterminado, o con los `roleIds` que se indiquen; `[]` = sin roles) y le manda el mail `user-invitation` con un link de un solo uso que vence en 72 horas. Registra `USER_INVITED` y `ACCESS_GRANTED`.
+  - **`POST /api/users/{id}/invitations`** (admin): reenvía la invitación mientras el usuario no la haya aceptado. Los links anteriores dejan de funcionar. Registra `USER_INVITATION_RESENT`.
+  - **`POST /api/auth/accept-invitation`** (M2M): la página de la aplicación manda el token y la contraseña elegida. Se guarda la contraseña, se verifica el email, se anulan los demás links pendientes del usuario y se manda `welcome-user`. Registra `USER_INVITATION_ACCEPTED`. Una contraseña débil no consume el link.
+  - **Migración `0012_add_user_invitations.sql`:** agrega el propósito `Invitation` a `user_tokens` y el template de sistema `user-invitation` (en español, editable desde la administración de templates con sus cuatro placeholders obligatorios).
+  - `POST /api/users` (crear con contraseña) sigue igual.
+
 ## 0.6.2 - 2026-11-25
 
 Cierra el hallazgo importante de la prueba E2E del backoffice contra producción (#123).

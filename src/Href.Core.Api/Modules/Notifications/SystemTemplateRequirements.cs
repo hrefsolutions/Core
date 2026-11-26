@@ -12,6 +12,7 @@ public static class SystemTemplateRequirements
             ["welcome-user"] = ["UserName", "AppName"],
             ["verify-email"] = ["UserName", "AppName", "VerificationUrl", "ExpiresInHours"],
             ["reset-password"] = ["UserName", "AppName", "ResetUrl", "ExpiresInMinutes"],
+            ["user-invitation"] = ["UserName", "AppName", "InvitationUrl", "ExpiresInHours"],
             ["delivery-failed-alert"] = ["OriginalTo", "OriginalSubject", "NotificationId", "Attempts", "LastError"],
         };
 
