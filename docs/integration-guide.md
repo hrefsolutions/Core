@@ -157,11 +157,13 @@ Passwords must be 10 to 128 characters (`400 Users.WeakPassword`).
 | Resend verification | `POST /api/auth/resend-verification` `{ email, verifyEmailUrl }` | Always `202`. It sends only if the account exists, is active, is not verified and has access to your application, and at most once every 60 seconds. |
 | Forgot password | `POST /api/auth/forgot-password` `{ email, resetPasswordUrl }` | Always `202`. It sends a `reset-password` link valid for 30 minutes, under the same conditions and at most once every 60 seconds. Older reset links stop working. |
 | Reset password | `POST /api/auth/reset-password` `{ token, newPassword }` | `204`. The password changes and **every session of the user is revoked**. A weak password returns `400 Users.WeakPassword` and keeps the link usable. A bad token returns `400 Auth.InvalidOneTimeToken`. |
+| Accept invitation | `POST /api/auth/accept-invitation` `{ token, password }` | `204`. For users an admin invited to your application from the Core backoffice (`POST /api/users/invitations`, link valid for 72 h). The password is set, the email is verified, a `welcome-user` email is sent and the user can log in. A weak password returns `400 Users.WeakPassword` and keeps the link usable. A used, expired, foreign or resent-over token returns `400 Auth.InvalidOneTimeToken`: ask an admin to resend the invitation. |
 
 Pages your application hosts:
 
 - **Verify email page** (`verifyEmailUrl`): reads `token` from the query string, sends it to your backend, which calls `verify-email`, and then shows "email verified" or "link expired, request a new one". The new-link button calls `resend-verification`.
 - **Reset password page** (`resetPasswordUrl`): reads `token`, asks for the new password, and sends both to your backend, which calls `reset-password`.
+- **Accept invitation page** (only if admins invite users to your application): reads `token`, asks for the password, and sends both to your backend, which calls `accept-invitation`. Give its URL to the Core admins: they enter it as `acceptInvitationUrl` when they invite.
 
 `resend-verification` and `forgot-password` always answer `202`, so your UI must not say whether the email exists. Show a neutral message such as "if the account exists, we sent you an email".
 

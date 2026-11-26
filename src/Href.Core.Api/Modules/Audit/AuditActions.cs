@@ -27,6 +27,9 @@ public static class AuditActions
     public const string Logout = "LOGOUT";
     public const string UserRegistered = "USER_REGISTERED";
     public const string EmailVerified = "EMAIL_VERIFIED";
+    public const string UserInvited = "USER_INVITED";
+    public const string UserInvitationResent = "USER_INVITATION_RESENT";
+    public const string UserInvitationAccepted = "USER_INVITATION_ACCEPTED";
     public const string PasswordResetRequested = "PASSWORD_RESET_REQUESTED";
     public const string PasswordReset = "PASSWORD_RESET";
     public const string SessionsRevoked = "SESSIONS_REVOKED";

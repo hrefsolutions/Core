@@ -18,6 +18,7 @@ public class UserToken : Entity
 
     public static readonly TimeSpan EmailVerificationLifetime = TimeSpan.FromHours(24);
     public static readonly TimeSpan PasswordResetLifetime = TimeSpan.FromMinutes(30);
+    public static readonly TimeSpan InvitationLifetime = TimeSpan.FromHours(72);
 
     protected UserToken()
     {

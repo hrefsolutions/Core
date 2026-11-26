@@ -7,4 +7,5 @@ public enum UserTokenPurpose
 {
     EmailVerification,
     PasswordReset,
+    Invitation,
 }

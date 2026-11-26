@@ -58,6 +58,7 @@ try
     builder.Services.AddScoped<NotificationService>();
     builder.Services.AddScoped<EmailTemplateService>();
     builder.Services.AddScoped<UserService>();
+    builder.Services.AddScoped<InvitationService>();
     builder.Services.AddScoped<PermissionAdminService>();
     builder.Services.AddScoped<RoleAdminService>();
     builder.Services.AddScoped<ApplicationAccessService>();
