@@ -1,6 +1,7 @@
 using Href.Core.Api.Common.Results;
 using Href.Core.Api.Modules.Audit;
 using Href.Core.Api.Modules.Auth;
+using Href.Core.Api.Modules.Authorization;
 using NHibernate;
 using NHibernate.Linq;
 using Npgsql;
@@ -15,6 +16,17 @@ namespace Href.Core.Api.Modules.Applications;
 public sealed class ApplicationService(ISession session, TimeProvider timeProvider, IAuditService auditService)
 {
     private const string AppKeyUniqueIndexName = "ux_applications_app_key";
+
+    private const string CancelNotificationsSql = """
+        UPDATE notifications
+        SET status = 'Cancelled',
+            processing_started_at_utc = NULL,
+            updated_at_utc = :now,
+            version = version + 1
+        WHERE application_id = :applicationId
+          AND status IN ('Pending', 'Processing')
+        RETURNING id
+        """;
 
     private static readonly string DummySecretHash = new('0', Application.SecretHashLength);
 
@@ -241,6 +253,92 @@ public sealed class ApplicationService(ISession session, TimeProvider timeProvid
         await transaction.CommitAsync(cancellationToken);
 
         return new RotateClientSecretResponse(clientSecret);
+    }
+
+    /// <summary>
+    /// Deletes a suspended application without user accesses. In one transaction, after locking the row: cancels its
+    /// <c>Pending</c> and <c>Processing</c> notifications (<c>NOTIFICATIONS_CANCELLED</c>, when there was any), deletes its
+    /// refresh and one-time tokens, each role (<c>ROLE_DELETED</c>) and each permission (<c>PERMISSION_DELETED</c>), and
+    /// finally the application (<c>APPLICATION_DELETED</c>). Every entry carries the application id, which the lookup by key
+    /// could no longer resolve. Every authorization write locks the same row first, so none can add an access meanwhile.
+    /// </summary>
+    public async Task<Result> DeleteAsync(string appKey, CancellationToken cancellationToken)
+    {
+        using var transaction = session.BeginTransaction();
+
+        var application = await FindByAppKeyAsync(appKey, cancellationToken, lockForUpdate: true);
+
+        if (application is null)
+        {
+            return ApplicationErrors.NotFound;
+        }
+
+        if (application.Id == CoreApplication.Id)
+        {
+            return ApplicationErrors.Reserved;
+        }
+
+        if (application.Status != ApplicationStatus.Suspended)
+        {
+            return ApplicationErrors.DeleteRequiresSuspended;
+        }
+
+        var applicationId = application.Id;
+        var hasAccesses = await session.Query<UserApplicationAccess>()
+            .AnyAsync(access => access.ApplicationId == applicationId, cancellationToken);
+
+        if (hasAccesses)
+        {
+            return ApplicationErrors.HasUserAccesses;
+        }
+
+        var before = ApplicationAuditSnapshot.From(application);
+        var cancelledIds = await session.CreateSQLQuery(CancelNotificationsSql)
+            .AddScalar("id", NHibernateUtil.Guid)
+            .SetParameter("applicationId", applicationId)
+            .SetParameter("now", timeProvider.GetUtcNow().UtcDateTime, NHibernateUtil.UtcDateTime)
+            .ListAsync<Guid>(cancellationToken);
+
+        if (cancelledIds.Count > 0)
+        {
+            await auditService.RecordNotificationsCancelledAsync(before, cancelledIds.Order().ToList(), cancellationToken);
+        }
+
+        await session.CreateSQLQuery("DELETE FROM refresh_tokens WHERE application_id = :applicationId")
+            .SetParameter("applicationId", applicationId)
+            .ExecuteUpdateAsync(cancellationToken);
+        await session.CreateSQLQuery("DELETE FROM user_tokens WHERE application_id = :applicationId")
+            .SetParameter("applicationId", applicationId)
+            .ExecuteUpdateAsync(cancellationToken);
+
+        var roles = await session.Query<Role>()
+            .Where(role => role.ApplicationId == applicationId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var role in roles.OrderBy(role => role.Name, StringComparer.Ordinal))
+        {
+            var roleBefore = RoleAuditSnapshot.From(role);
+            await session.DeleteAsync(role, cancellationToken);
+            await auditService.RecordRoleChangeAsync(AuditActions.RoleDeleted, application.AppKey, roleBefore, null, cancellationToken);
+        }
+
+        var permissions = await session.Query<Permission>()
+            .Where(permission => permission.ApplicationId == applicationId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var permission in permissions.OrderBy(permission => permission.Key, StringComparer.Ordinal))
+        {
+            var permissionBefore = PermissionAuditSnapshot.From(permission);
+            await session.DeleteAsync(permission, cancellationToken);
+            await auditService.RecordPermissionChangeAsync(AuditActions.PermissionDeleted, application.AppKey, permissionBefore, null, cancellationToken);
+        }
+
+        await session.DeleteAsync(application, cancellationToken);
+        await auditService.RecordApplicationChangeAsync(AuditActions.ApplicationDeleted, before, null, cancellationToken);
+        await session.FlushAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return Result.Success();
     }
 
     /// <summary>

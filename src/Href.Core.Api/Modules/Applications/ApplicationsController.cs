@@ -152,4 +152,27 @@ public sealed class ApplicationsController(ApplicationService applicationService
             ? result.ToProblem(this)
             : Ok(result.Value);
     }
+
+    /// <summary>
+    /// Deletes a client application. It must be suspended and no user can have access to it (revoke each one with
+    /// <c>DELETE /api/apps/{appKey}/users/{userId}</c>). Its roles, permissions and user tokens are deleted, and its pending or
+    /// in-progress notifications are cancelled. The audit log and the notification history stay, tied to the application id,
+    /// so a new application that later takes the same <c>appKey</c> does not inherit them.
+    /// </summary>
+    /// <response code="204">The application was deleted.</response>
+    /// <response code="404">`Applications.NotFound`.</response>
+    /// <response code="409">`Applications.Reserved` (the reserved `core` application cannot be deleted), `Applications.DeleteRequiresSuspended` or `Applications.HasUserAccesses`.</response>
+    [HttpDelete("{appKey}")]
+    [Authorize(Policy = AdminAuthentication.PolicyName)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> Delete(string appKey, CancellationToken cancellationToken)
+    {
+        var result = await applicationService.DeleteAsync(appKey, cancellationToken);
+
+        return result.IsFailure
+            ? result.ToProblem(this)
+            : NoContent();
+    }
 }

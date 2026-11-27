@@ -16,6 +16,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
 
     private static Notification QueueSimple(TimeProvider timeProvider, string? htmlBody = "<p>x</p>", string? textBody = null) =>
         Notification.Queue(
+            Guid.NewGuid(),
             UniqueKey("app")[..20],
             "user@example.com",
             null,
@@ -215,6 +216,7 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
         using var sessionFactory = postgres.BuildSessionFactory(clock);
         var appKey = UniqueKey("app")[..20];
         var notification = Notification.Queue(
+            Guid.NewGuid(),
             appKey,
             "user@example.com",
             "Jane Doe",
@@ -491,10 +493,11 @@ public sealed class NotificationPersistenceIntegrationTests(PostgresFixture post
         var exception = await Assert.ThrowsAsync<GenericADOException>(() => session
             .CreateSQLQuery(
                 """
-                INSERT INTO notifications (id, app_key, to_email, subject, html_body, status, max_attempts, next_attempt_at_utc, created_at_utc, updated_at_utc)
-                VALUES (:id, 'bogus-app', 'user@example.com', 'Subject', '<p>x</p>', 'Bogus', 3, now(), now(), now())
+                INSERT INTO notifications (id, application_id, app_key, to_email, subject, html_body, status, max_attempts, next_attempt_at_utc, created_at_utc, updated_at_utc)
+                VALUES (:id, :applicationId, 'bogus-app', 'user@example.com', 'Subject', '<p>x</p>', 'Bogus', 3, now(), now(), now())
                 """)
             .SetGuid("id", Guid.CreateVersion7())
+            .SetGuid("applicationId", Guid.CreateVersion7())
             .ExecuteUpdateAsync(cancellationToken));
 
         var postgresException = FindPostgresException(exception);

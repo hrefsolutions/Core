@@ -11,6 +11,11 @@ public class UserApplicationAccess : Entity, IAuditableEntity
 {
     public const string UserApplicationUniqueIndexName = "ux_user_application_accesses_user_id_application_id";
 
+    /// <summary>
+    /// Foreign key to <c>users</c>. A grant that races with the deletion of its user fails on it.
+    /// </summary>
+    public const string UserForeignKeyName = "fk_user_application_accesses_user_id";
+
     private ISet<Role> _roles = new HashSet<Role>();
 
     protected UserApplicationAccess()

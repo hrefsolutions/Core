@@ -8,7 +8,8 @@ public sealed record AuditEntry(
     object? NewValues = null,
     AuditActorType? ActorTypeOverride = null,
     string? ActorIdOverride = null,
-    string? AppKeyOverride = null);
+    string? AppKeyOverride = null,
+    Guid? ApplicationIdOverride = null);
 
 public interface IAuditService
 {

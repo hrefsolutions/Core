@@ -23,6 +23,13 @@ public sealed class NotificationMapping : ClassMapping<Notification>
             mapper.UnsavedValue(0);
         });
 
+        Property(entity => entity.ApplicationId, mapper =>
+        {
+            mapper.Column("application_id");
+            mapper.NotNullable(true);
+            mapper.Update(false);
+        });
+
         Property(entity => entity.AppKey, mapper =>
         {
             mapper.Column("app_key");

@@ -20,7 +20,7 @@ public sealed class AuditLogsController(
     /// query parameters combined with AND.
     /// </summary>
     /// <response code="200">`{ items, page, pageSize, totalCount }` with `Cache-Control: no-store`.</response>
-    /// <response code="400">`AuditLogs.InvalidPage`, `AuditLogs.InvalidPageSize`, `AuditLogs.InvalidDate`, `AuditLogs.InvalidRange`, `AuditLogs.InvalidActorType` or `AuditLogs.InvalidFilter`; unparsable numbers return the framework `ValidationProblemDetails` without `errorCode`.</response>
+    /// <response code="400">`AuditLogs.InvalidPage`, `AuditLogs.InvalidPageSize`, `AuditLogs.InvalidDate`, `AuditLogs.InvalidRange`, `AuditLogs.InvalidActorType`, `AuditLogs.InvalidApplicationId` or `AuditLogs.InvalidFilter`; unparsable numbers return the framework `ValidationProblemDetails` without `errorCode`.</response>
     [HttpGet]
     [ProducesResponseType<AuditLogPageResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -28,6 +28,7 @@ public sealed class AuditLogsController(
         [FromQuery] string? from,
         [FromQuery] string? to,
         [FromQuery] string? appKey,
+        [FromQuery] string? applicationId,
         [FromQuery] string? actorType,
         [FromQuery] string? actorId,
         [FromQuery] string? action,
@@ -40,7 +41,7 @@ public sealed class AuditLogsController(
     {
         Response.Headers.CacheControl = "no-store";
 
-        var filter = new AuditLogFilterRequest(from, to, appKey, actorType, actorId, action, entityType, entityId, correlationId);
+        var filter = new AuditLogFilterRequest(from, to, appKey, actorType, actorId, action, entityType, entityId, correlationId, applicationId);
         var result = await queryService.ListAsync(new ListAuditLogsQuery(filter, page, pageSize), cancellationToken);
 
         return result.IsFailure
@@ -53,7 +54,7 @@ public sealed class AuditLogsController(
     /// <c>format=json</c>.
     /// </summary>
     /// <response code="200">The streamed file (`text/csv; charset=utf-8` with BOM, or a JSON array as `application/json; charset=utf-8`) with `Content-Disposition: attachment` and `Cache-Control: no-store`.</response>
-    /// <response code="400">`AuditLogs.InvalidFormat`, `AuditLogs.ExportTooLarge`, or the filter codes of the list: `AuditLogs.InvalidDate`, `AuditLogs.InvalidRange`, `AuditLogs.InvalidActorType` or `AuditLogs.InvalidFilter`.</response>
+    /// <response code="400">`AuditLogs.InvalidFormat`, `AuditLogs.ExportTooLarge`, or the filter codes of the list: `AuditLogs.InvalidDate`, `AuditLogs.InvalidRange`, `AuditLogs.InvalidActorType`, `AuditLogs.InvalidApplicationId` or `AuditLogs.InvalidFilter`.</response>
     [HttpGet("export")]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK, "text/csv", "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -62,6 +63,7 @@ public sealed class AuditLogsController(
         [FromQuery] string? from,
         [FromQuery] string? to,
         [FromQuery] string? appKey,
+        [FromQuery] string? applicationId,
         [FromQuery] string? actorType,
         [FromQuery] string? actorId,
         [FromQuery] string? action,
@@ -72,7 +74,7 @@ public sealed class AuditLogsController(
     {
         Response.Headers.CacheControl = "no-store";
 
-        var filter = new AuditLogFilterRequest(from, to, appKey, actorType, actorId, action, entityType, entityId, correlationId);
+        var filter = new AuditLogFilterRequest(from, to, appKey, actorType, actorId, action, entityType, entityId, correlationId, applicationId);
         var result = await exportService.PrepareAsync(new ExportAuditLogsQuery(format, filter), cancellationToken);
 
         return result.IsFailure

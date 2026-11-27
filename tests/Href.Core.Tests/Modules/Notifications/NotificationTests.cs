@@ -60,6 +60,7 @@ public sealed class NotificationTests
         string? notifyOnFailureTo = "ops@example.com",
         string? correlationId = "corr-1") =>
         Notification.Queue(
+            Guid.NewGuid(),
             appKey,
             toEmail,
             toName,
@@ -316,7 +317,25 @@ public sealed class NotificationTests
     public void Queue_WithNullTimeProvider_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            Notification.Queue("app", "a@b.co", null, "s", "<p>x</p>", null, null, null, null, null!));
+            Notification.Queue(Guid.NewGuid(), "app", "a@b.co", null, "s", "<p>x</p>", null, null, null, null, null!));
+    }
+
+    [Fact]
+    public void Queue_WithEmptyApplicationId_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            Notification.Queue(Guid.Empty, "app", "a@b.co", null, "s", "<p>x</p>", null, null, null, null, TimeProvider.System));
+    }
+
+    [Fact]
+    public void Queue_KeepsTheApplicationId()
+    {
+        var applicationId = Guid.NewGuid();
+
+        var result = Notification.Queue(applicationId, "app", "a@b.co", null, "s", "<p>x</p>", null, null, null, null, TimeProvider.System);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(applicationId, result.Value.ApplicationId);
     }
 
     [Fact]

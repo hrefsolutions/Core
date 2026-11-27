@@ -6,4 +6,5 @@ public enum NotificationStatus
     Processing,
     Sent,
     Failed,
+    Cancelled,
 }

@@ -76,6 +76,13 @@ public sealed class AuditLogMapping : ClassMapping<AuditLog>
             mapper.Update(false);
         });
 
+        Property(entity => entity.ApplicationId, mapper =>
+        {
+            mapper.Column("application_id");
+            mapper.NotNullable(false);
+            mapper.Update(false);
+        });
+
         Property(entity => entity.OldValues, mapper =>
         {
             mapper.Column("old_values");

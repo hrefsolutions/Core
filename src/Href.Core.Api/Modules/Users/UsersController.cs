@@ -178,5 +178,26 @@ public sealed class UsersController(UserService userService, InvitationService i
             : Ok(result.Value);
     }
 
+    /// <summary>
+    /// Deletes a user. The user must be locked and have no application access (revoke each one with
+    /// <c>DELETE /api/apps/{appKey}/users/{userId}</c>). Its sessions and one-time links are deleted too; the audit log keeps
+    /// its history.
+    /// </summary>
+    /// <response code="204">The user was deleted.</response>
+    /// <response code="404">`Users.NotFound`.</response>
+    /// <response code="409">`Users.DeleteRequiresLocked` or `Users.HasApplicationAccesses`.</response>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await userService.DeleteAsync(id, cancellationToken);
+
+        return result.IsFailure
+            ? result.ToProblem(this)
+            : NoContent();
+    }
+
     private string? GetCorrelationId() => HttpContext.Items[CorrelationIdMiddleware.HeaderName] as string;
 }

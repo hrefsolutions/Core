@@ -38,5 +38,13 @@ public static class ApplicationErrors
 
     public static readonly Error Reserved = Error.Conflict(
         "Applications.Reserved",
-        "The reserved core application cannot be suspended or opened to self-registration.");
+        "The reserved core application cannot be suspended, deleted or opened to self-registration.");
+
+    public static readonly Error DeleteRequiresSuspended = Error.Conflict(
+        "Applications.DeleteRequiresSuspended",
+        "Only a suspended application can be deleted. Suspend the application first.");
+
+    public static readonly Error HasUserAccesses = Error.Conflict(
+        "Applications.HasUserAccesses",
+        "One or more users still have access to the application. Revoke every access before deleting the application.");
 }

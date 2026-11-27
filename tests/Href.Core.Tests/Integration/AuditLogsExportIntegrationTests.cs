@@ -17,7 +17,7 @@ public sealed class AuditLogsExportIntegrationTests(PostgresFixture postgres)
 
     private static readonly string[] ExpectedColumns =
     [
-        "id", "occurredAtUtc", "action", "entityType", "entityId", "actorType", "actorId", "appKey",
+        "id", "occurredAtUtc", "action", "entityType", "entityId", "actorType", "actorId", "appKey", "applicationId",
         "oldValues", "newValues", "correlationId", "ipAddress", "userAgent",
     ];
 
@@ -25,6 +25,7 @@ public sealed class AuditLogsExportIntegrationTests(PostgresFixture postgres)
     public async Task Csv_ReturnsBomHeaderAndEscapedRowsOldestFirstAsAnAttachment()
     {
         var correlationId = Unique("corr");
+        var applicationId = Guid.NewGuid();
         var newer = AuditLog.Create(
             occurredAtUtc: BaseTime.AddMinutes(1),
             action: "TEST_EXPORT",
@@ -37,7 +38,8 @@ public sealed class AuditLogsExportIntegrationTests(PostgresFixture postgres)
             newValues: """{"lines":[1,2]}""",
             correlationId: correlationId,
             ipAddress: "192.0.2.1",
-            userAgent: "Agent, with comma");
+            userAgent: "Agent, with comma",
+            applicationId: applicationId);
         var older = Row(BaseTime, correlationId: correlationId);
         await SeedAsync(newer, older);
         await using var factory = new ApiFactory(postgres.ConnectionString);
@@ -62,11 +64,12 @@ public sealed class AuditLogsExportIntegrationTests(PostgresFixture postgres)
         Assert.Equal(newer.Id.ToString(), row[0]);
         Assert.Equal(BaseTime.AddMinutes(1), DateTime.Parse(row[1], null, System.Globalization.DateTimeStyles.RoundtripKind));
         Assert.EndsWith("Z", row[1], StringComparison.Ordinal);
-        Assert.Equal(["TEST_EXPORT", "Invoice", "inv-1", "User", "user-1", "billing"], row[2..8]);
-        Assert.Equal("a, \"quoted\" value", JsonDocument.Parse(row[8]).RootElement.GetProperty("note").GetString());
-        Assert.Equal(2, JsonDocument.Parse(row[9]).RootElement.GetProperty("lines").GetArrayLength());
-        Assert.Equal([correlationId, "192.0.2.1", "Agent, with comma"], row[10..13]);
+        Assert.Equal(["TEST_EXPORT", "Invoice", "inv-1", "User", "user-1", "billing", applicationId.ToString()], row[2..9]);
+        Assert.Equal("a, \"quoted\" value", JsonDocument.Parse(row[9]).RootElement.GetProperty("note").GetString());
+        Assert.Equal(2, JsonDocument.Parse(row[10]).RootElement.GetProperty("lines").GetArrayLength());
+        Assert.Equal([correlationId, "192.0.2.1", "Agent, with comma"], row[11..14]);
         Assert.Equal(string.Empty, records[1][8]);
+        Assert.Equal(string.Empty, records[1][9]);
     }
 
     [Fact]
@@ -94,7 +97,7 @@ public sealed class AuditLogsExportIntegrationTests(PostgresFixture postgres)
         Assert.Equal("safe-value", row[4]);
         Assert.Equal("'+cmd", row[6]);
         Assert.Equal("'@sum", row[7]);
-        Assert.Equal("'=1+1, \"x\"", row[12]);
+        Assert.Equal("'=1+1, \"x\"", row[13]);
     }
 
     [Fact]

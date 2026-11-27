@@ -14,7 +14,8 @@ public sealed record AuditLogFilterRequest(
     string? Action = null,
     string? EntityType = null,
     string? EntityId = null,
-    string? CorrelationId = null);
+    string? CorrelationId = null,
+    string? ApplicationId = null);
 
 public sealed record ListAuditLogsQuery(AuditLogFilterRequest Filter, int Page, int PageSize);
 
@@ -30,6 +31,7 @@ public sealed record AuditLogResponse(
     string ActorType,
     string? ActorId,
     string? AppKey,
+    Guid? ApplicationId,
     JsonElement? OldValues,
     JsonElement? NewValues,
     string? CorrelationId,
@@ -46,6 +48,7 @@ public sealed record AuditLogResponse(
             auditLog.ActorType.ToString(),
             auditLog.ActorId,
             auditLog.AppKey,
+            auditLog.ApplicationId,
             ParseJson(auditLog.OldValues),
             ParseJson(auditLog.NewValues),
             auditLog.CorrelationId,

@@ -30,7 +30,8 @@ public sealed class AuditLogFilter
         string? action,
         string? entityType,
         string? entityId,
-        string? correlationId)
+        string? correlationId,
+        Guid? applicationId)
     {
         FromUtc = fromUtc;
         ToUtc = toUtc;
@@ -41,6 +42,7 @@ public sealed class AuditLogFilter
         EntityType = entityType;
         EntityId = entityId;
         CorrelationId = correlationId;
+        ApplicationId = applicationId;
     }
 
     public DateTime? FromUtc { get; }
@@ -63,6 +65,12 @@ public sealed class AuditLogFilter
     public string? EntityId { get; }
 
     public string? CorrelationId { get; }
+
+    /// <summary>
+    /// Exact application id. Use it, not <see cref="AppKey"/>, to read the history of one application: a key freed by a
+    /// deleted application can be taken by a new one, and the key filter returns the entries of both.
+    /// </summary>
+    public Guid? ApplicationId { get; }
 
     public static Result<AuditLogFilter> Create(AuditLogFilterRequest request)
     {
@@ -94,7 +102,12 @@ public sealed class AuditLogFilter
             return AuditLogErrors.InvalidFilter;
         }
 
-        return new AuditLogFilter(fromUtc, toUtc, appKey, actorType, actorId, action, entityType, entityId, correlationId);
+        if (!TryParseApplicationId(request.ApplicationId, out var applicationId))
+        {
+            return AuditLogErrors.InvalidApplicationId;
+        }
+
+        return new AuditLogFilter(fromUtc, toUtc, appKey, actorType, actorId, action, entityType, entityId, correlationId, applicationId);
     }
 
     public IQueryable<AuditLog> Apply(IQueryable<AuditLog> query)
@@ -114,6 +127,11 @@ public sealed class AuditLogFilter
         if (AppKey is { } appKey)
         {
             query = query.Where(auditLog => auditLog.AppKey == appKey);
+        }
+
+        if (ApplicationId is { } applicationId)
+        {
+            query = query.Where(auditLog => auditLog.ApplicationId == applicationId);
         }
 
         if (ActorType is { } actorType)
@@ -202,6 +220,27 @@ public sealed class AuditLogFilter
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Accepts only the canonical form (<c>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</c>); blank means no filter.
+    /// </summary>
+    private static bool TryParseApplicationId(string? value, out Guid? applicationId)
+    {
+        applicationId = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (!Guid.TryParseExact(value.Trim(), "D", out var parsed) || parsed == Guid.Empty)
+        {
+            return false;
+        }
+
+        applicationId = parsed;
+        return true;
     }
 
     private static bool TryNormalize(string? value, int maxLength, out string? normalized)
