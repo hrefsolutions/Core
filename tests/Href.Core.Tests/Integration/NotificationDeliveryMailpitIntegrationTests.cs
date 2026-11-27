@@ -43,6 +43,7 @@ public sealed class NotificationDeliveryMailpitIntegrationTests(PostgresFixture 
             AppKeyFilter = appKey,
         };
         var notification = Notification.Queue(
+            Guid.NewGuid(),
             appKey,
             "ana.garcia@example.test",
             "Ana García",

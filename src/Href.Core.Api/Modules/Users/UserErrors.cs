@@ -36,6 +36,14 @@ public static class UserErrors
         "Users.NotLocked",
         "The user is not locked.");
 
+    public static readonly Error DeleteRequiresLocked = Error.Conflict(
+        "Users.DeleteRequiresLocked",
+        "Only a locked user can be deleted. Lock the user first.");
+
+    public static readonly Error HasApplicationAccesses = Error.Conflict(
+        "Users.HasApplicationAccesses",
+        "The user still has access to one or more applications. Revoke every access before deleting the user.");
+
     public static readonly Error NotFound = Error.NotFound(
         "Users.NotFound",
         "The requested user was not found.");

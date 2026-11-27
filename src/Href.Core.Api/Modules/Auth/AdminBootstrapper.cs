@@ -86,7 +86,8 @@ public sealed partial class AdminBootstrapper(
                     EntityId: application.Id.ToString(),
                     NewValues: new CoreSecretBootstrapAuditSnapshot(CoreApplication.AppKey, "Bootstrap:CoreClientSecret"),
                     ActorTypeOverride: AuditActorType.System,
-                    AppKeyOverride: CoreApplication.AppKey),
+                    AppKeyOverride: CoreApplication.AppKey,
+                    ApplicationIdOverride: CoreApplication.Id),
                 cancellationToken);
             LogCoreSecretSet(logger);
         }

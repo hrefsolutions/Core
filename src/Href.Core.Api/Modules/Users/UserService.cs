@@ -14,7 +14,7 @@ namespace Href.Core.Api.Modules.Users;
 
 /// <summary>
 /// Admin use cases for global users over <see cref="ISession"/>. Writes run in one explicit transaction that also records
-/// the audit entry. Users are locked, never deleted.
+/// the audit entry. A user is deleted only after it is locked and has no application access left.
 /// </summary>
 public sealed class UserService(
     ISession session,
@@ -256,6 +256,53 @@ public sealed class UserService(
 
     public Task<Result<UserResponse>> UnlockAsync(Guid id, CancellationToken cancellationToken) =>
         ChangeLockStateAsync(id, user => user.Unlock(), AuditActions.UserUnlocked, revokeSessions: false, cancellationToken);
+
+    /// <summary>
+    /// Deletes a locked user without application accesses, recorded as <c>USER_DELETED</c>. Its refresh tokens and one-time
+    /// tokens are deleted with it; the audit log keeps its history. The per-user refresh token lock and then the row lock
+    /// (<c>FOR UPDATE</c>) come first, in the same order as the login and the lock: a concurrent access grant either commits
+    /// before the check (and the delete answers <c>Users.HasApplicationAccesses</c>) or finds the user gone.
+    /// </summary>
+    public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var transaction = session.BeginTransaction();
+
+        await RefreshTokenWrites.LockUserAsync(session, id, cancellationToken);
+        var user = await session.GetAsync<User>(id, LockMode.Upgrade, cancellationToken);
+
+        if (user is null)
+        {
+            return UserErrors.NotFound;
+        }
+
+        if (user.Status != UserStatus.Locked)
+        {
+            return UserErrors.DeleteRequiresLocked;
+        }
+
+        var hasAccesses = await session.Query<UserApplicationAccess>()
+            .AnyAsync(access => access.UserId == id, cancellationToken);
+
+        if (hasAccesses)
+        {
+            return UserErrors.HasApplicationAccesses;
+        }
+
+        var before = UserAuditSnapshot.From(user);
+
+        await session.CreateSQLQuery("DELETE FROM refresh_tokens WHERE user_id = :userId")
+            .SetParameter("userId", id)
+            .ExecuteUpdateAsync(cancellationToken);
+        await session.CreateSQLQuery("DELETE FROM user_tokens WHERE user_id = :userId")
+            .SetParameter("userId", id)
+            .ExecuteUpdateAsync(cancellationToken);
+        await session.DeleteAsync(user, cancellationToken);
+        await auditService.RecordUserChangeAsync(AuditActions.UserDeleted, before, null, cancellationToken);
+        await session.FlushAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return Result.Success();
+    }
 
     /// <summary>
     /// Accepts only the exact enum names (<c>Active</c>, <c>Locked</c>); numeric or combined values are rejected.

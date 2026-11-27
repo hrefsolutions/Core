@@ -42,7 +42,7 @@ public static class NotificationErrors
 
     public static readonly Error InvalidStatus = Error.Validation(
         "Notifications.InvalidStatus",
-        "The status must be one of 'Pending', 'Processing', 'Sent' or 'Failed'.");
+        "The status must be one of 'Pending', 'Processing', 'Sent', 'Failed' or 'Cancelled'.");
 
     public static readonly Error InvalidDateRange = Error.Validation(
         "Notifications.InvalidDateRange",

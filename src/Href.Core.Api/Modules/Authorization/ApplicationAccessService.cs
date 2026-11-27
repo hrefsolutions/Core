@@ -154,6 +154,10 @@ public sealed class ApplicationAccessService(ISession session, IAuditService aud
         {
             return AuthorizationErrors.AccessAlreadyGranted;
         }
+        catch (Exception exception) when (PostgresErrors.IsForeignKeyViolation(exception, UserApplicationAccess.UserForeignKeyName))
+        {
+            return UserErrors.NotFound;
+        }
 
         return ToResponse(user, access);
     }

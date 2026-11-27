@@ -35,6 +35,12 @@ public class AuditLog : Entity
 
     public virtual string? AppKey { get; protected set; }
 
+    /// <summary>
+    /// Id of the application the entry belongs to. Unlike <see cref="AppKey"/>, it is never shared with a later application
+    /// that reuses the key of a deleted one.
+    /// </summary>
+    public virtual Guid? ApplicationId { get; protected set; }
+
     public virtual string? OldValues { get; protected set; }
 
     public virtual string? NewValues { get; protected set; }
@@ -57,7 +63,8 @@ public class AuditLog : Entity
         string? newValues = null,
         string? correlationId = null,
         string? ipAddress = null,
-        string? userAgent = null)
+        string? userAgent = null,
+        Guid? applicationId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
 
@@ -68,6 +75,7 @@ public class AuditLog : Entity
             ActorType = actorType,
             ActorId = Truncate(actorId, ActorIdMaxLength),
             AppKey = Truncate(appKey, AppKeyMaxLength),
+            ApplicationId = applicationId,
             EntityType = Truncate(entityType, EntityTypeMaxLength),
             EntityId = Truncate(entityId, EntityIdMaxLength),
             OldValues = oldValues,

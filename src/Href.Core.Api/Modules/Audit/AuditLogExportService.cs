@@ -21,7 +21,7 @@ public sealed class AuditLogExportService(
     IOptions<AuditLogExportOptions> options)
 {
     private const string SelectColumns =
-        "SELECT id, occurred_at_utc, action, entity_type, entity_id, actor_type, actor_id, app_key, "
+        "SELECT id, occurred_at_utc, action, entity_type, entity_id, actor_type, actor_id, app_key, application_id, "
         + "CAST(old_values AS text) AS old_values, CAST(new_values AS text) AS new_values, correlation_id, ip_address, user_agent "
         + "FROM audit_logs";
 
@@ -139,6 +139,7 @@ public sealed class AuditLogExportService(
             .AddScalar("actor_type", NHibernateUtil.String)
             .AddScalar("actor_id", NHibernateUtil.String)
             .AddScalar("app_key", NHibernateUtil.String)
+            .AddScalar("application_id", NHibernateUtil.Guid)
             .AddScalar("old_values", NHibernateUtil.String)
             .AddScalar("new_values", NHibernateUtil.String)
             .AddScalar("correlation_id", NHibernateUtil.String)
@@ -159,11 +160,12 @@ public sealed class AuditLogExportService(
                 (string)row[5],
                 (string?)row[6],
                 (string?)row[7],
-                (string?)row[8],
+                (Guid?)row[8],
                 (string?)row[9],
                 (string?)row[10],
                 (string?)row[11],
-                (string?)row[12]))
+                (string?)row[12],
+                (string?)row[13]))
             .ToList();
     }
 
@@ -185,6 +187,13 @@ public sealed class AuditLogExportService(
         }
 
         AppendEquals(sql, parameters, "app_key", "appKey", filter.AppKey);
+
+        if (filter.ApplicationId is { } applicationId)
+        {
+            sql.Append(" AND application_id = :applicationId");
+            parameters.Add(new QueryParameter("applicationId", applicationId, NHibernateUtil.Guid));
+        }
+
         AppendEquals(sql, parameters, "actor_type", "actorType", filter.ActorType?.ToString());
         AppendEquals(sql, parameters, "actor_id", "actorId", filter.ActorId);
         AppendEquals(sql, parameters, "action", "action", filter.Action);
@@ -236,6 +245,7 @@ public sealed class AuditLogExportService(
             export.Filter.FromUtc,
             export.Filter.ToUtc,
             export.Filter.AppKey,
+            export.Filter.ApplicationId,
             export.Filter.ActorType?.ToString(),
             export.Filter.ActorId,
             export.Filter.Action,

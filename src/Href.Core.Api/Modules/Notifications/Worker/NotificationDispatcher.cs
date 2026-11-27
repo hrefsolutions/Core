@@ -377,6 +377,7 @@ public sealed partial class NotificationDispatcher(
             }
 
             var alert = Notification.Queue(
+                failed.ApplicationId,
                 failed.AppKey,
                 failed.NotifyOnFailureTo,
                 null,
