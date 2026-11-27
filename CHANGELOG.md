@@ -4,6 +4,10 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.8.0 - 2026-11-27
+
+Agrega el borrado de usuarios y de aplicaciones, y separa por aplicación las notificaciones y la auditoría (#129).
+
 ### Agregado
 
 - Borrado de usuarios y de aplicaciones. Hasta ahora los usuarios solo se podían bloquear y las aplicaciones solo suspender.
