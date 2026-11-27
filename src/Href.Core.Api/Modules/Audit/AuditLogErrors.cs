@@ -32,6 +32,10 @@ public static class AuditLogErrors
         "AuditLogs.ExportTooLarge",
         "The export matches more rows than the allowed maximum. Narrow the filters (for example the date range) and try again.");
 
+    public static readonly Error InvalidApplicationId = Error.Validation(
+        "AuditLogs.InvalidApplicationId",
+        "The application id must be a non-empty GUID in the form xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.");
+
     public static readonly Error InvalidFilter = Error.Validation(
         "AuditLogs.InvalidFilter",
         "Text filters must be a single line without control characters and no longer than their column.");

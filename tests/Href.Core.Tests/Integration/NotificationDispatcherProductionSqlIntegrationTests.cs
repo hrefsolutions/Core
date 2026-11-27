@@ -131,7 +131,7 @@ public sealed class NotificationDispatcherProductionSqlIntegrationTests(Postgres
 
     private async Task<Notification> QueueAsync(string appKey, string toEmail)
     {
-        var notification = Notification.Queue(appKey, toEmail, null, "Hola", "<p>Body</p>", null, null, null, null, _clock).Value;
+        var notification = Notification.Queue(Guid.NewGuid(), appKey, toEmail, null, "Hola", "<p>Body</p>", null, null, null, null, _clock).Value;
 
         using var session = _sessionFactory!.OpenSession();
         using var transaction = session.BeginTransaction();

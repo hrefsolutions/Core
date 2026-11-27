@@ -731,6 +731,7 @@ public sealed class NotificationDispatcherIntegrationTests : IDisposable
         string subject = "Hola",
         string htmlBody = "<p>Body</p>") =>
         Notification.Queue(
+            Guid.NewGuid(),
             _appKey,
             toEmail,
             "Ana García",

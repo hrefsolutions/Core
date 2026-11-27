@@ -6,11 +6,13 @@ public static class AuditActions
     public const string ApplicationUpdated = "APPLICATION_UPDATED";
     public const string ApplicationStatusChanged = "APPLICATION_STATUS_CHANGED";
     public const string ApplicationSecretRotated = "APPLICATION_SECRET_ROTATED";
+    public const string ApplicationDeleted = "APPLICATION_DELETED";
     public const string UserCreated = "USER_CREATED";
     public const string UserUpdated = "USER_UPDATED";
     public const string UserEmailChanged = "USER_EMAIL_CHANGED";
     public const string UserLocked = "USER_LOCKED";
     public const string UserUnlocked = "USER_UNLOCKED";
+    public const string UserDeleted = "USER_DELETED";
     public const string RoleCreated = "ROLE_CREATED";
     public const string RoleUpdated = "ROLE_UPDATED";
     public const string RoleDeleted = "ROLE_DELETED";
@@ -34,6 +36,7 @@ public static class AuditActions
     public const string PasswordReset = "PASSWORD_RESET";
     public const string SessionsRevoked = "SESSIONS_REVOKED";
     public const string NotificationQueued = "NOTIFICATION_QUEUED";
+    public const string NotificationsCancelled = "NOTIFICATIONS_CANCELLED";
     public const string TemplateCreated = "TEMPLATE_CREATED";
     public const string TemplateUpdated = "TEMPLATE_UPDATED";
     public const string TemplateDeleted = "TEMPLATE_DELETED";

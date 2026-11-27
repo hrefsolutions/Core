@@ -16,6 +16,9 @@ namespace Href.Core.Api.Modules.Notifications;
 /// <c>processing_started_at_utc = NULL</c>.
 /// A claimed notification whose send never started or was cancelled by a shutdown is returned with
 /// <c>ReleaseUnsent</c>, which gives the attempt back (<c>Attempts - 1</c>) and makes it <c>Pending</c> again.
+/// Deleting the application cancels its <c>Pending</c> and <c>Processing</c> notifications with raw SQL
+/// (<c>status = 'Cancelled'</c>, <c>processing_started_at_utc = NULL</c>); the worker then finds a different version and
+/// does not send them.
 /// </summary>
 public class Notification : Entity, IAuditableEntity
 {
@@ -43,6 +46,12 @@ public class Notification : Entity, IAuditableEntity
     protected Notification()
     {
     }
+
+    /// <summary>
+    /// Id of the application that queued the notification. Reads are scoped by it, not by <see cref="AppKey"/>, so a new
+    /// application that reuses the key of a deleted one never sees its notifications.
+    /// </summary>
+    public virtual Guid ApplicationId { get; protected set; }
 
     public virtual string AppKey { get; protected set; } = string.Empty;
 
@@ -86,6 +95,7 @@ public class Notification : Entity, IAuditableEntity
     public virtual DateTime UpdatedAtUtc { get; protected set; }
 
     public static Result<Notification> Queue(
+        Guid applicationId,
         string? appKey,
         string? toEmail,
         string? toName,
@@ -98,6 +108,11 @@ public class Notification : Entity, IAuditableEntity
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(timeProvider);
+
+        if (applicationId == Guid.Empty)
+        {
+            throw new ArgumentException("The application id cannot be empty.", nameof(applicationId));
+        }
 
         var normalizedAppKey = appKey?.Trim() ?? string.Empty;
 
@@ -163,6 +178,7 @@ public class Notification : Entity, IAuditableEntity
 
         return new Notification
         {
+            ApplicationId = applicationId,
             AppKey = normalizedAppKey,
             ToEmail = normalizedToEmail,
             ToName = normalizedToName,

@@ -432,19 +432,6 @@ public sealed class UsersEndpointIntegrationTests(PostgresFixture postgres)
         Assert.Equal(UserStatus.Active, (await LoadUserAsync(user.Id)).Status);
     }
 
-    [Fact]
-    public async Task UsersRoutes_DoNotExposeDelete()
-    {
-        await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var client = factory.CreateAdminClient();
-        var user = await CreateUserAsync(client, UniqueEmail("nodelete"), "No Delete");
-
-        var response = await client.DeleteAsync($"/api/users/{user.Id}", TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
-        Assert.NotNull(await LoadUserAsync(user.Id));
-    }
-
     private static StringContent EmptyJsonBody() => new(string.Empty, System.Text.Encoding.UTF8, "application/json");
 
     private static string UniqueEmail(string prefix) => $"{prefix}-{Guid.NewGuid():N}@example.com";

@@ -4,6 +4,30 @@ Cambios relevantes de Href.Core. Versionado [SemVer](https://semver.org/lang/es/
 
 ## Próxima versión
 
+## 0.8.0 - 2026-11-27
+
+Agrega el borrado de usuarios y de aplicaciones, y separa por aplicación las notificaciones y la auditoría (#129).
+
+### Agregado
+
+- Borrado de usuarios y de aplicaciones. Hasta ahora los usuarios solo se podían bloquear y las aplicaciones solo suspender.
+  - **`DELETE /api/users/{id}`** (admin): borra un usuario que esté bloqueado y que no tenga acceso a ninguna aplicación. Si no está bloqueado responde `409 Users.DeleteRequiresLocked`, y si le queda algún acceso responde `409 Users.HasApplicationAccesses`. Los accesos se revocan antes con `DELETE /api/apps/{appKey}/users/{userId}`, que también le saca los roles de esa aplicación. Se borran también sus sesiones y sus links de un solo uso. Registra `USER_DELETED`, y el historial de auditoría del usuario se conserva.
+  - **`DELETE /api/apps/{appKey}`** (admin): borra una aplicación que esté suspendida y a la que ningún usuario tenga acceso. Si es `core` responde `409 Applications.Reserved`, si no está suspendida `409 Applications.DeleteRequiresSuspended` y si le quedan usuarios `409 Applications.HasUserAccesses`. En la misma transacción:
+    - cancela sus notificaciones `Pending` y `Processing` (estado nuevo `Cancelled`) y lo registra en `NOTIFICATIONS_CANCELLED`, con la cantidad y los ids;
+    - borra sus tokens, cada rol (`ROLE_DELETED`) y cada permiso (`PERMISSION_DELETED`);
+    - borra la aplicación (`APPLICATION_DELETED`).
+  - **Concurrencia:** una asignación de acceso que se cruza con el borrado del usuario responde `404 Users.NotFound` en lugar de un 500. Una notificación que se encola mientras se borra su aplicación queda cancelada o no llega a encolarse.
+
+### Cambiado
+
+- Una aplicación nueva que reutiliza el `appKey` de una aplicación borrada no hereda nada de la anterior:
+  - **Notificaciones:** `notifications` tiene `application_id`, y `GET /api/notifications` y `GET /api/notifications/{id}` buscan por el `app_id` de la aplicación que llama, ya no por el key. Si el key no pertenece a ninguna aplicación, encolar responde `404 Applications.NotFound`.
+  - **Auditoría:** `audit_logs` tiene `application_id`, que se llena en cada registro. `GET /api/audit-logs` y el export aceptan el filtro `applicationId` (un GUID inválido o vacío responde `400 AuditLogs.InvalidApplicationId`) y devuelven `applicationId` en cada fila. El export suma la columna `applicationId` después de `appKey`. Para ver el historial de una sola aplicación hay que usar `applicationId`; `appKey` devuelve el de todas las aplicaciones que usaron ese key.
+  - **Migración `0013_scope_records_by_application_id.sql`:**
+    - agrega `application_id` a `notifications` y lo completa desde `app_key`. Si alguna fila no matchea con ninguna aplicación, la migración falla.
+    - agrega el estado `Cancelled` al check de `notifications`.
+    - agrega `application_id` a `audit_logs` y completa las filas existentes desde `app_key`. Para eso desactiva el trigger de inmutabilidad solo dentro de la transacción de esa migración y no toca ninguna otra columna.
+
 ## 0.7.0 - 2026-11-26
 
 Agrega la invitación de usuarios por mail (#126).

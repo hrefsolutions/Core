@@ -1,5 +1,6 @@
 using System.Text;
 using Href.Core.Api.Common.Results;
+using Href.Core.Api.Modules.Applications;
 using Href.Core.Api.Modules.Audit;
 using NHibernate;
 using NHibernate.Linq;
@@ -168,7 +169,7 @@ public sealed class NotificationService(
     }
 
     public async Task<Result<NotificationPageResponse>> ListAsync(
-        string appKey,
+        Guid applicationId,
         ListNotificationsQuery request,
         CancellationToken cancellationToken)
     {
@@ -201,7 +202,7 @@ public sealed class NotificationService(
             return NotificationErrors.InvalidDateRange;
         }
 
-        var query = session.Query<Notification>().Where(notification => notification.AppKey == appKey);
+        var query = session.Query<Notification>().Where(notification => notification.ApplicationId == applicationId);
 
         if (status.HasValue)
         {
@@ -244,12 +245,12 @@ public sealed class NotificationService(
     }
 
     public async Task<Result<NotificationResponse>> GetByIdAsync(
-        string appKey,
+        Guid applicationId,
         Guid id,
         CancellationToken cancellationToken)
     {
         var row = await Project(session.Query<Notification>()
-                .Where(notification => notification.Id == id && notification.AppKey == appKey))
+                .Where(notification => notification.Id == id && notification.ApplicationId == applicationId))
             .SingleOrDefaultAsync(cancellationToken);
 
         if (row is null)
@@ -324,7 +325,58 @@ public sealed class NotificationService(
         string? correlationId,
         CancellationToken cancellationToken)
     {
+        var outerTransaction = session.GetCurrentTransaction();
+
+        if (outerTransaction is { IsActive: true })
+        {
+            return await QueueInTransactionAsync(
+                appKey, to, subject, html, text, templateKey, notifyOnFailureTo, correlationId, cancellationToken);
+        }
+
+        using var transaction = session.BeginTransaction();
+
+        var result = await QueueInTransactionAsync(
+            appKey, to, subject, html, text, templateKey, notifyOnFailureTo, correlationId, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result.Error;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return result.Value;
+    }
+
+    /// <summary>
+    /// Resolves the application that holds <paramref name="appKey"/> with <c>FOR SHARE</c>, so a concurrent deletion of the
+    /// application (which locks the row <c>FOR UPDATE</c>) either waits for this notification and cancels it, or runs first
+    /// and leaves nothing to resolve.
+    /// </summary>
+    private async Task<Result<Notification>> QueueInTransactionAsync(
+        string appKey,
+        EmailRecipientRequest to,
+        string subject,
+        string html,
+        string? text,
+        string? templateKey,
+        string? notifyOnFailureTo,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        var applicationIds = await session
+            .CreateSQLQuery("SELECT id FROM applications WHERE app_key = :appKey FOR SHARE")
+            .AddScalar("id", NHibernateUtil.Guid)
+            .SetParameter("appKey", appKey.Trim())
+            .ListAsync<Guid>(cancellationToken);
+
+        if (applicationIds.Count != 1)
+        {
+            return ApplicationErrors.NotFound;
+        }
+
         var queueResult = Notification.Queue(
+            applicationIds[0],
             appKey,
             to.Email,
             to.Name,
@@ -342,20 +394,7 @@ public sealed class NotificationService(
         }
 
         var notification = queueResult.Value;
-
-        var outerTransaction = session.GetCurrentTransaction();
-
-        if (outerTransaction is { IsActive: true })
-        {
-            await SaveWithAuditAsync(notification, cancellationToken);
-            return notification;
-        }
-
-        using var transaction = session.BeginTransaction();
-
         await SaveWithAuditAsync(notification, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
         return notification;
     }
 
@@ -375,7 +414,8 @@ public sealed class NotificationService(
                     notification.Status.ToString(),
                     notification.NotifyOnFailureTo,
                     notification.CorrelationId),
-                AppKeyOverride: notification.AppKey),
+                AppKeyOverride: notification.AppKey,
+                ApplicationIdOverride: notification.ApplicationId),
             cancellationToken);
     }
 

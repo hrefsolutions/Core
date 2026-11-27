@@ -60,6 +60,7 @@ public sealed class NotificationWorkerIntegrationTests(PostgresFixture postgres)
 
         var sessionFactory = factory.Services.GetRequiredService<ISessionFactory>();
         var notification = Notification.Queue(
+            Guid.NewGuid(),
             appKey,
             to,
             null,

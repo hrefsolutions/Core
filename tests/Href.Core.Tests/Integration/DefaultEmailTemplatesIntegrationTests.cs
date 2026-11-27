@@ -120,6 +120,7 @@ public sealed class DefaultEmailTemplatesIntegrationTests(PostgresFixture postgr
         Assert.DoesNotContain("<script>", rendered.HtmlBody);
 
         var queued = Notification.Queue(
+            Guid.NewGuid(),
             "test-app",
             "user@example.com",
             null,

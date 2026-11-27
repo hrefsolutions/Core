@@ -77,15 +77,13 @@ public sealed class NotificationsController(NotificationService notificationServ
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = NotificationService.DefaultPageSize)
     {
-        var appKey = User.GetAppKey();
-
-        if (string.IsNullOrEmpty(appKey))
+        if (User.GetAppId() is not { } applicationId)
         {
             return AppKeyAuthentication.InvalidCredentialsError.ToProblem(this);
         }
 
         var result = await notificationService.ListAsync(
-            appKey,
+            applicationId,
             new ListNotificationsQuery(status, createdFrom, createdTo, page, pageSize),
             cancellationToken);
 
@@ -104,14 +102,12 @@ public sealed class NotificationsController(NotificationService notificationServ
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var appKey = User.GetAppKey();
-
-        if (string.IsNullOrEmpty(appKey))
+        if (User.GetAppId() is not { } applicationId)
         {
             return AppKeyAuthentication.InvalidCredentialsError.ToProblem(this);
         }
 
-        var result = await notificationService.GetByIdAsync(appKey, id, cancellationToken);
+        var result = await notificationService.GetByIdAsync(applicationId, id, cancellationToken);
 
         return result.IsFailure
             ? result.ToProblem(this)

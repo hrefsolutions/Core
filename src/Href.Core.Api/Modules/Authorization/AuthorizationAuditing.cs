@@ -20,7 +20,7 @@ public static class AuthorizationAuditing
         RoleAuditSnapshot? before,
         RoleAuditSnapshot? after,
         CancellationToken cancellationToken = default) =>
-        RecordAsync(auditService, action, appKey, RoleEntityType, before?.Id, after?.Id, before, after, cancellationToken);
+        RecordAsync(auditService, action, appKey, (before?.ApplicationId ?? after?.ApplicationId), RoleEntityType, before?.Id, after?.Id, before, after, cancellationToken);
 
     public static Task<AuditLog> RecordPermissionChangeAsync(
         this IAuditService auditService,
@@ -29,7 +29,7 @@ public static class AuthorizationAuditing
         PermissionAuditSnapshot? before,
         PermissionAuditSnapshot? after,
         CancellationToken cancellationToken = default) =>
-        RecordAsync(auditService, action, appKey, PermissionEntityType, before?.Id, after?.Id, before, after, cancellationToken);
+        RecordAsync(auditService, action, appKey, (before?.ApplicationId ?? after?.ApplicationId), PermissionEntityType, before?.Id, after?.Id, before, after, cancellationToken);
 
     public static Task<AuditLog> RecordAccessChangeAsync(
         this IAuditService auditService,
@@ -38,12 +38,13 @@ public static class AuthorizationAuditing
         AccessAuditSnapshot? before,
         AccessAuditSnapshot? after,
         CancellationToken cancellationToken = default) =>
-        RecordAsync(auditService, action, appKey, AccessEntityType, before?.Id, after?.Id, before, after, cancellationToken);
+        RecordAsync(auditService, action, appKey, (before?.ApplicationId ?? after?.ApplicationId), AccessEntityType, before?.Id, after?.Id, before, after, cancellationToken);
 
     private static Task<AuditLog> RecordAsync(
         IAuditService auditService,
         string action,
         string appKey,
+        Guid? applicationId,
         string entityType,
         Guid? beforeId,
         Guid? afterId,
@@ -64,7 +65,8 @@ public static class AuthorizationAuditing
                 EntityId: entityId.ToString(),
                 OldValues: before,
                 NewValues: after,
-                AppKeyOverride: appKey),
+                AppKeyOverride: appKey,
+                ApplicationIdOverride: applicationId),
             cancellationToken);
     }
 }

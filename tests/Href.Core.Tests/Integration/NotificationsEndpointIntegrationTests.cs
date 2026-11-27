@@ -155,12 +155,17 @@ public sealed class NotificationsEndpointIntegrationTests(PostgresFixture postgr
         using var session = sessionFactory.OpenSession();
         var ids = new List<Guid>();
         var index = 0;
+        var applicationId = (await session.Query<Application>()
+            .Where(application => application.AppKey == appKey)
+            .Select(application => application.Id)
+            .ToListAsync(TestContext.Current.CancellationToken)).Single();
 
         foreach (var (at, sent) in rows)
         {
             index++;
             clock.SetUtcNow(at);
             var notification = Notification.Queue(
+                applicationId,
                 appKey,
                 "user@example.com",
                 "Ana",
@@ -479,7 +484,7 @@ public sealed class NotificationsEndpointIntegrationTests(PostgresFixture postgr
     [Fact]
     public async Task QueueHtmlAsync_InsideAnActiveTransaction_JoinsItAndRollsBackWithTheCaller()
     {
-        var appKey = UniqueKey("outer-rb");
+        var appKey = (await CreateAppAsync()).AppKey;
         Guid id;
 
         using (var session = postgres.SessionFactory.OpenSession())
@@ -517,7 +522,7 @@ public sealed class NotificationsEndpointIntegrationTests(PostgresFixture postgr
     [Fact]
     public async Task QueueHtmlAsync_InsideAnActiveTransaction_CommitsOnlyWhenTheCallerCommits()
     {
-        var appKey = UniqueKey("outer-ok");
+        var appKey = (await CreateAppAsync()).AppKey;
         Guid id;
 
         using (var session = postgres.SessionFactory.OpenSession())
@@ -686,7 +691,7 @@ public sealed class NotificationsEndpointIntegrationTests(PostgresFixture postgr
     [Fact]
     public async Task QueueHtmlAsync_WhenTheAuditRecordFails_RollsBackTheNotification()
     {
-        var appKey = UniqueKey("atomic");
+        var appKey = (await CreateAppAsync()).AppKey;
         Guid? notificationId = null;
 
         using (var session = postgres.SessionFactory.OpenSession())

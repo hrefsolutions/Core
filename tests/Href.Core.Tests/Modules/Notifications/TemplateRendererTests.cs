@@ -427,7 +427,7 @@ public sealed class TemplateRendererTests
 
         var rendered = _renderer.Render("Hi {{V}}", "<p>x</p>", null, Vars(("V", hostile)));
         var queued = Notification.Queue(
-            "app", "a@b.co", null, rendered.Value.Subject, rendered.Value.HtmlBody, null, null, null, null, TimeProvider.System);
+            Guid.NewGuid(), "app", "a@b.co", null, rendered.Value.Subject, rendered.Value.HtmlBody, null, null, null, null, TimeProvider.System);
 
         Assert.True(queued.IsSuccess);
         Assert.Equal("Hi a b c d e f", queued.Value.Subject);

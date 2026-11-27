@@ -12,7 +12,7 @@ internal abstract class AuditLogExportWriter : IAsyncDisposable
 {
     public static readonly string[] Columns =
     [
-        "id", "occurredAtUtc", "action", "entityType", "entityId", "actorType", "actorId", "appKey",
+        "id", "occurredAtUtc", "action", "entityType", "entityId", "actorType", "actorId", "appKey", "applicationId",
         "oldValues", "newValues", "correlationId", "ipAddress", "userAgent",
     ];
 
@@ -64,6 +64,7 @@ internal abstract class AuditLogExportWriter : IAsyncDisposable
                     row.ActorType,
                     row.ActorId,
                     row.AppKey,
+                    row.ApplicationId?.ToString(),
                     row.OldValues,
                     row.NewValues,
                     row.CorrelationId,
@@ -122,11 +123,12 @@ internal abstract class AuditLogExportWriter : IAsyncDisposable
             _writer.WriteString(Columns[5], row.ActorType);
             WriteNullableString(Columns[6], row.ActorId);
             WriteNullableString(Columns[7], row.AppKey);
-            WriteJson(Columns[8], row.OldValues);
-            WriteJson(Columns[9], row.NewValues);
-            WriteNullableString(Columns[10], row.CorrelationId);
-            WriteNullableString(Columns[11], row.IpAddress);
-            WriteNullableString(Columns[12], row.UserAgent);
+            WriteNullableString(Columns[8], row.ApplicationId?.ToString());
+            WriteJson(Columns[9], row.OldValues);
+            WriteJson(Columns[10], row.NewValues);
+            WriteNullableString(Columns[11], row.CorrelationId);
+            WriteNullableString(Columns[12], row.IpAddress);
+            WriteNullableString(Columns[13], row.UserAgent);
             _writer.WriteEndObject();
             return ValueTask.CompletedTask;
         }
